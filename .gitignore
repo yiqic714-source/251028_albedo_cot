@@ -1,15 +1,18 @@
+# Ignore Python build artifacts
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3
-*.db
+
+# Ignore editor and OS temporary files
 *.DS_Store
 *.swp
 *.swo
 *.bak
 *.log
 *.tmp
+
+# Ignore data and large archives
 *.nii
 *.npz
 *.nc
@@ -27,15 +30,18 @@ __pycache__/
 *.xz
 *.dat
 *.dbf
-*.sh
-build_sbdart_lookup_table/
-CERES_EBAF_TOA_2020/
-CERES_L2SSF_2020/
-CERES_L3SSF_2020/
-SSFproduct/
-figs/
-former/
+
+# Ignore shell scripts only if not needed for repository
+# Uncomment the next line if you do not want to track .sh files
+# *.sh
+
+# Ignore some large data-only directories
 mod06/
 myd06/
 processed_data/
-uniform_fov_product/
+
+# Keep source directories with Python scripts
+# build_sbdart_lookup_table/
+# former/
+# SSFproduct/
+# CERES_* directories may contain useful scripts, so do not ignore them globally
