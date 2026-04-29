@@ -12,8 +12,6 @@ import uniform_fov_tools as uft
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.colors as mcolors
-import pandas as pd
-import Ac_cot_fitting_utils as acfu
 
 # Set weight for each angle bin within CERES FOV
 wij = np.array([
@@ -154,7 +152,7 @@ def julian_to_datetime(julian_days):
 
 
 def format_panel_tag(panel_idx, icon_style):
-    if icon_style == 'science':
+    if icon_style == 'nature':
         letter = chr(ord('A') + panel_idx)
         return rf'$\mathbf{{{letter}}}$'
 
@@ -228,163 +226,6 @@ def upscale_and_interpolate(lat, lon, solar_zenith, sensor_zenith, target_shape)
     sensor_zenith_new = interp_sensor(points).reshape(Ny_new, Nx_new)
 
     return lat_new, lon_new, solar_zenith_new, sensor_zenith_new
-
-
-# Plot global fitting figure
-def plot_global_ax(ax):
-    _, global_processed_data = acfu.preprocess_ocean_data(
-		min_cot_mod08=2.5,
-		min_ret_cot_cer=2.5)
-
-    # background density
-    acfu.plot_density_overlay(
-        global_processed_data['x1_ret'], global_processed_data['y1_list_ret'][0],
-        global_processed_data['x1_msk'], global_processed_data['y1_msk'], ax
-    )
-
-    keys = ['ret', 'cp', 'dcp', 'msk', 'LH74']
-    seasons = list(acfu.season_dict.keys())
-
-    global_result_row = {'Ocean': 'Global'}
-
-    # Fit directly on global samples to keep consistent with sensitivity_test_satellite.py.
-    fig_tmp, ax_tmp = plt.subplots(figsize=(4, 3))
-    try:
-        line_handles_tmp = []
-        line_labels_tmp = []
-
-        ret_result = acfu.plot_weighted_fit_line(
-            global_processed_data['ret_cot'],
-            global_processed_data['ret_albedo_list'][0],
-            global_processed_data['sza'],
-            global_processed_data['season'],
-            global_processed_data['x2'],
-            'blue',
-            'ret',
-            line_handles_tmp,
-            line_labels_tmp,
-            ax_tmp,
-            linestyle='--',
-            cot_std=0.1,
-            albedo_std=0.13,
-        )
-
-        cp_result = acfu.plot_weighted_fit_line(
-            global_processed_data['ret_cot'],
-            global_processed_data['ret_albedo_list'][1],
-            global_processed_data['sza'],
-            global_processed_data['season'],
-            global_processed_data['x2'],
-            'orange',
-            'cp',
-            line_handles_tmp,
-            line_labels_tmp,
-            ax_tmp,
-            linestyle='-',
-            cot_std=0.0,
-            albedo_std=0.03,
-        )
-
-        dcp_result = acfu.plot_weighted_fit_line(
-            global_processed_data['ret_cot'],
-            global_processed_data['ret_albedo_list'][2],
-            global_processed_data['sza'],
-            global_processed_data['season'],
-            global_processed_data['x2'],
-            'red',
-            'dcp',
-            line_handles_tmp,
-            line_labels_tmp,
-            ax_tmp,
-            linestyle='--',
-            cot_std=0.0,
-            albedo_std=0.03,
-        )
-
-        msk_result = acfu.plot_weighted_fit_line(
-            global_processed_data['msk_cot'],
-            global_processed_data['msk_albedo'],
-            global_processed_data['sza'],
-            global_processed_data['season'],
-            global_processed_data['x2'],
-            'magenta',
-            'msk',
-            line_handles_tmp,
-            line_labels_tmp,
-            ax_tmp,
-            linestyle='-',
-            cot_std=0.1,
-            albedo_std=0.20,
-        )
-    finally:
-        plt.close(fig_tmp)
-
-    # LH74 line follows existing fig2 logic (deterministic line in transformed space).
-    k_lh74, b_lh74, _, _, _ = stats.linregress(global_processed_data['x2'], global_processed_data['y22'])
-
-    fit_results = {
-        'ret': ret_result[:8],
-        'cp': cp_result[:8],
-        'dcp': dcp_result[:8],
-        'msk': msk_result[:8],
-        'LH74': (k_lh74, b_lh74, 0.0, 0.0, {}, {}, {}, {}),
-    }
-
-    for key in keys:
-        (
-            global_k, global_b, global_k_unc, global_b_unc,
-            season_k, season_b, season_k_unc, season_b_unc
-        ) = fit_results[key]
-
-        global_result_row[f'Ann_Slope_{key}'] = global_k
-        global_result_row[f'Ann_Intercept_{key}'] = global_b
-        global_result_row[f'Ann_SlopeUnc_{key}'] = global_k_unc
-        global_result_row[f'Ann_InterceptUnc_{key}'] = global_b_unc
-
-        for s_name in seasons:
-            global_result_row[f'{s_name}_Slope_{key}'] = season_k.get(s_name, np.nan)
-            global_result_row[f'{s_name}_Intercept_{key}'] = season_b.get(s_name, np.nan)
-            global_result_row[f'{s_name}_SlopeUnc_{key}'] = season_k_unc.get(s_name, np.nan)
-            global_result_row[f'{s_name}_InterceptUnc_{key}'] = season_b_unc.get(s_name, np.nan)
-
-    # plot lines using mean results
-    x2 = global_processed_data['x2']
-    line_handles = []
-    line_labels = []
-
-    plot_specs = [
-        ('LH74', 'black', '-'),
-        ('dcp', 'red', '--'),
-        ('cp', 'orange', '-'),
-        ('ret', 'blue', '--'),
-        ('msk', 'magenta', '-')
-    ]
-
-    for key, color, linestyle in plot_specs:
-        k = global_result_row[f'Ann_Slope_{key}']
-        b = global_result_row[f'Ann_Intercept_{key}']
-        y_line = k * x2 + b
-
-        sign = '+' if b >= 0 else ''
-        eq = f'y={k:.2f}x{sign}{b:.1f}'
-        line = ax.plot(x2, y_line, color=color, linestyle=linestyle, lw=1.5, label=f'{key}: {eq}')
-        line_handles.append(line[0])
-        line_labels.append(f'{key}: {eq}')
-
-    ax.legend(handles=line_handles, labels=line_labels, fontsize=9, loc='upper left')
-    ax.grid(True, linestyle='--', alpha=0.3)
-    ax.set_xlabel(r'ln(COT)', fontsize=14)
-    ax.set_ylabel(r'$\ln\left[A_{\mathrm{c}}/(1-A_{\mathrm{c}})\right]$', fontsize=14)
-    ax.set_xlim(0.5, 3.5)
-    ax.set_ylim(-2.0, 1.5)
-
-    # save global mean results
-    output_csv_path = '/home/chenyiqi/251028_albedo_cot/processed_data/k_lnb_global_by_seasons.csv'
-    output_df = pd.DataFrame([global_result_row])
-    output_df.to_csv(output_csv_path, index=False)
-    print(f"Global slope and intercept results saved to: {output_csv_path}")
-
-    return global_result_row
 
 
 # Main process
@@ -543,31 +384,20 @@ if __name__ == "__main__":
     )
 
     # =========================
-    # Create figure with new layout
-    # (a) Data Domains
-    # (b) Full Granule
-    # (c) Processed Grid
-    # (d) Identified FOSRs
-    # (e) Slope Fittings
+    # Create figure with new layout (3 panels A, B, C vertically)
+    # Panel C includes orange scatter from original panel D
     # =========================
-    fig = plt.figure(figsize=(15, 8.5))
+    fig = plt.figure(figsize=(4.3, 12))
 
     gs = fig.add_gridspec(
-        2, 3,
-        hspace=0.5, wspace=0.3,
-        height_ratios=[1, 0.9],
+        3, 1,
+        hspace=0.23,
         bottom=0.08, top=0.95
     )
 
     ax1 = fig.add_subplot(gs[0, 0])  # (a) Data Domains
-    ax2 = fig.add_subplot(gs[0, 1])  # (b) Full Granule
-    ax3 = fig.add_subplot(gs[0, 2])  # (c) Processed Grid
-    ax4 = fig.add_subplot(gs[1, 0])  # (d) Identified FOSRs
-    ax5 = fig.add_subplot(gs[1, 1])  # (e) Slope Fittings
-
-    # Hide unused panel
-    ax6 = fig.add_subplot(gs[1, 2])
-    ax6.axis('off')
+    ax2 = fig.add_subplot(gs[1, 0])  # (b) Full Granule
+    ax3 = fig.add_subplot(gs[2, 0])  # (c) Processed Grid
 
     from matplotlib.cm import ScalarMappable
 
@@ -584,7 +414,7 @@ if __name__ == "__main__":
     # -------------------------
     # (a) Data Domains
     # -------------------------
-    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}   Data Domains',
+    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}  Data Domain Illustration',
              transform=ax1.transAxes, fontsize=15, va='bottom', ha='left')
     ax1.set_xticks([])
     ax1.set_yticks([])
@@ -599,7 +429,7 @@ if __name__ == "__main__":
     sc1 = ax2.scatter(lon_mod_full, lat_mod_full, s=0.04, c=cld_type_full,
                       marker='o', cmap=cmap_cld, norm=norm, edgecolors='None')
     ax2.grid(True, linestyle='--', alpha=0.5)
-    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}   Full Granule',
+    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}  Full Granule',
              transform=ax2.transAxes, fontsize=15, va='bottom', ha='left')
 
     rect = patches.Rectangle(
@@ -643,15 +473,22 @@ if __name__ == "__main__":
     ax2.set_yticklabels(lat_tick_labels_full, fontsize=9)
 
     # -------------------------
-    # (c) Processed Grid
+    # (c) Processed Grid with orange FOSRs overlay (from original panel D)
     # -------------------------
     ax3.scatter(lon_mod_regional_invalid, lat_mod_regional_invalid, s=8, c='lightgray',
                 marker='o', edgecolors='None')
     sc2 = ax3.scatter(lon_mod, lat_mod, c=cld_type, s=8, marker='o',
                       cmap=cmap_cld, norm=norm, edgecolors='None')
+    
+    # Add orange scatter points from original panel (d) onto panel (c)
+    if center_latlon is not None and len(center_latlon) > 0:
+        ax3.scatter(center_latlon[:, 1], center_latlon[:, 0],
+                    c='black', s=18, marker='o', zorder=5)
+        
+    
     ax3.set_xlim(grid_window[1])
     ax3.set_ylim(grid_window[0])
-    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}   Processed Grid',
+    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}  Processed Grid',
              transform=ax3.transAxes, fontsize=15, va='bottom', ha='left')
 
     lon_start = grid_window[1][0]
@@ -687,105 +524,11 @@ if __name__ == "__main__":
     ax3.set_yticklabels(lat_tick_labels_reg, fontsize=9)
 
     # -------------------------
-    # (d) Identified FOSRs
+    # Colorbar for panels (b) and (c)
     # -------------------------
-    colors_white2blue = [
-        (1.0, 1.0, 1.0, 1.0),
-        (0.1216, 0.4039, 0.6745)
-    ]
-    cmap_white2blue = mcolors.LinearSegmentedColormap.from_list(
-        'white2blue', colors_white2blue, N=256
-    )
-
-    sc3 = ax4.scatter(lon_mod, lat_mod, c=weight_ret, s=8,
-                      cmap=cmap_white2blue, marker='o', edgecolors='None')
-
-    if center_latlon is not None and len(center_latlon) > 0:
-        ax4.scatter(center_latlon[:, 1], center_latlon[:, 0],
-                    c='orange', s=14, marker='o')
-
-    ax4.set_xlim(grid_window[1])
-    ax4.set_ylim(grid_window[0])
-    ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}   Identified FOSRs',
-             transform=ax4.transAxes, fontsize=15, va='bottom', ha='left')
-
-    # Annotate orange points
-    if center_latlon is not None and len(center_latlon) > 0:
-        for idx in range(len(center_latlon)):
-            lon_pt = center_latlon[idx, 1]
-            lat_pt = center_latlon[idx, 0]
-            cot_val = center_cot[idx]
-            albedo_val = center_albedo[idx]
-
-            try:
-                cot_val = float(np.asarray(cot_val).ravel()[0])
-            except Exception:
-                cot_val = np.nan
-            try:
-                albedo_val = float(np.asarray(albedo_val).ravel()[0])
-            except Exception:
-                albedo_val = np.nan
-
-            if np.isnan(cot_val) or np.isnan(albedo_val):
-                continue
-
-            label_text = "({:.1f}, {:.2f})".format(cot_val, albedo_val)
-
-            ax4.text(
-                x=lon_pt - 0.06,
-                y=lat_pt + 0.02,
-                s=label_text,
-                fontsize=11.5,
-                ha='center',
-                va='bottom',
-                color='black'
-            )
-
-    ax4.text(0.01, 0.68, r'(COT$_{\mathrm{ret}}, A_{\mathrm{c,ret}})$:',
-             transform=ax4.transAxes, fontsize=11.5, va='top', ha='left')
-
-    ax4.set_xticks(lon_ticks_reg)
-    lon_tick_labels_ret = []
-    for lon in lon_ticks_reg:
-        if not np.isnan(lon):
-            if lon < 0:
-                lon_tick_labels_ret.append(f"{abs(lon):.1f}°W")
-            elif lon > 0:
-                lon_tick_labels_ret.append(f"{lon:.1f}°E")
-            else:
-                lon_tick_labels_ret.append("0°")
-        else:
-            lon_tick_labels_ret.append("")
-    ax4.set_xticklabels(lon_tick_labels_ret, fontsize=9)
-
-    lat_ticks_ret = ax4.get_yticks()
-    lat_tick_labels_ret = []
-    for lat in lat_ticks_ret:
-        if not np.isnan(lat):
-            if lat < 0:
-                lat_tick_labels_ret.append(f"{abs(lat):.1f}°S")
-            elif lat > 0:
-                lat_tick_labels_ret.append(f"{lat:.1f}°N")
-            else:
-                lat_tick_labels_ret.append("0°")
-        else:
-            lat_tick_labels_ret.append("")
-    ax4.set_yticklabels(lat_tick_labels_ret, fontsize=9)
-
-    # -------------------------
-    # (e) Slope Fittings
-    # -------------------------
-    ax5.text(-0.01, 1.01, f'{format_panel_tag(4, icon_style)}   Slope Fittings',
-             transform=ax5.transAxes, fontsize=15, va='bottom', ha='left')
-    plot_global_ax(ax5)
-
-    # -------------------------
-    # Colorbars
-    # -------------------------
-    # colorbar for panels (b) and (c)
     pos2 = ax2.get_position()
     pos3 = ax3.get_position()
-    cbar_ax1 = fig.add_axes([pos2.x0, pos2.y0 - 0.06, pos3.x1 - pos2.x0, 0.02])
+    cbar_ax1 = fig.add_axes([pos2.x0, pos3.y0 - 0.04, pos3.x1 - pos2.x0, 0.015])
     cbar1 = plt.colorbar(
         sm_cld_cbar,
         cax=cbar_ax1,
@@ -794,26 +537,18 @@ if __name__ == "__main__":
         spacing='proportional'
     )
     cbar1.ax.set_xticklabels([
-        'Sunglint/\nLarge Zenith Angles',
+        'Sunglint or\nZenith Angles > 55°',
         'Clear Sky',
         'Unretrieved\nLiquid Cloud',
         'Retrieved\nLiquid Cloud',
         'Ice Cloud'
-    ], fontsize=10.5)
-    cbar1.ax.tick_params(axis='x', pad=8)
-
-    # colorbar for panel (d)
-    pos4 = ax4.get_position()
-    cbar_ax2 = fig.add_axes([pos4.x0, pos4.y0 - 0.06, pos4.width, 0.02])
-    cbar2 = plt.colorbar(
-        sc3, cax=cbar_ax2, orientation='horizontal', label='Cumulative Weight'
-    )
-    cbar2.ax.get_xaxis().get_label().set_fontsize(10.5)
+    ], fontsize=9, rotation=60, ha='right')
+    cbar1.ax.tick_params(axis='x', pad=6)
 
     # Adjust layout
     plt.tight_layout()
 
     # Ensure figs directory exists
     os.makedirs('figs', exist_ok=True)
-    plt.savefig('figs/illustration_5panels.png', dpi=300, bbox_inches='tight')
+    plt.savefig('figs/fig1_illustration.png', dpi=300, bbox_inches='tight')
     plt.show()
