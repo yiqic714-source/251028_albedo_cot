@@ -108,7 +108,7 @@ def process_ocean_data(ocean, input_dir1, input_dir2, output_csv_dir):
             cf_liq_ceres = float(cf_liq_ceres_str) if cf_liq_ceres_str else np.nan
             cttmin = float(cttmin_str) if cttmin_str else np.nan
             
-            # Filter valid rows: non-nan aod_mod08 + basic conditions
+            # Filter valid rows: non-nan aod_mod08 + liquid + far-from-zero CF
             if (not np.isnan(cf_liq_ceres) and not np.isnan(cttmin) and
                 cf_liq_ceres / cf_ceres > 0.99 and 
                 cf_ceres > 0.1):
@@ -248,7 +248,7 @@ if __name__ == "__main__":
     OCEANS = ['NPO', 'NAO', 'TAO', 'TIO', 'TPO', 'SPO', 'SAO', 'SIO']
     
     # Path configuration
-    INPUT_DIR1 = "/home/chenyiqi/251028_albedo_cot/SSFproduct/ocean_data0311/"
+    INPUT_DIR1 = "/home/chenyiqi/251028_albedo_cot/SSFproduct/ocean_data/"
     INPUT_DIR2 = "/home/chenyiqi/251028_albedo_cot/uniform_fov_product/ocean_data1227/"
     OUTPUT_CSV_DIR = "/home/chenyiqi/251028_albedo_cot/processed_data/merged_msk_and_ret_csv/"
     OUTPUT_PLOT_DIR = "/home/chenyiqi/251028_albedo_cot/figs/"

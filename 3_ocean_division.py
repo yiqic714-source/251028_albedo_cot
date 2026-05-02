@@ -121,5 +121,5 @@ if __name__ == "__main__":
         for file in file_paths],
         ignore_index=True)
     # df = df[df['ret_cot_cer'].notna()]
-    output_pattern = '/home/chenyiqi/251028_albedo_cot/SSFproduct/ocean_data0311/'
+    output_pattern = '/home/chenyiqi/251028_albedo_cot/SSFproduct/ocean_data/'
     process_file(df, output_pattern)

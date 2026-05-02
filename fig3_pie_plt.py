@@ -133,7 +133,7 @@ def plot_legend_only():
         handlelength=2
     )
 
-    out_path = os.path.join(FIG_DIR, 'pie_legend_only.png')
+    out_path = os.path.join(FIG_DIR, 'fig3_pie_legend_only.png')
     plt.savefig(out_path, dpi=300, bbox_inches='tight', transparent=True)
     plt.close()
     print(f"Legend-only figure saved to: {out_path}")

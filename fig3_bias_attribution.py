@@ -521,7 +521,7 @@ def plot_combined_4panels(icon_style='nature'):
     lookup_labels = [
         'Decoupled',
         r'With Observed $A_{\mathrm{sfc}}$',
-        'With Atmosphere',
+        'With Gas',
         r'With Observed SZA'
     ]
 

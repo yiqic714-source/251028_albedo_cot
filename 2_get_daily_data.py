@@ -48,6 +48,7 @@ def process_single_mod08_file(file_path, time_min, time_max, lat_min, lat_max):
     cotstd_liq = read_and_mask_mod_variable(hdf, 'Cloud_Optical_Thickness_Liquid_Standard_Deviation')[lat_mask, :]
     sza = read_and_mask_mod_variable(hdf, 'Solar_Zenith_Mean')[lat_mask, :]
     cttmin = read_and_mask_mod_variable(hdf, 'Cloud_Top_Temperature_Day_Minimum')[lat_mask, :]
+    aod = read_and_mask_mod_variable(hdf, 'Aerosol_Optical_Depth_Land_Ocean_Mean')[lat_mask, :]
     hdf.end()
 
     lon_grid, lat_grid = np.meshgrid(lon, lat)
@@ -63,6 +64,7 @@ def process_single_mod08_file(file_path, time_min, time_max, lat_min, lat_max):
         'cer_mod08': cer_liq.flatten(),
         'cotstd_mod08': cotstd_liq.flatten(),
         'sza': sza.flatten(),
+        'aod_mod08': aod.flatten(),
     })
     return df
 
