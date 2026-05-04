@@ -31,7 +31,7 @@ SLOPE_FILES = {
     'k2_corr': OUTPUT_DIR / 'szacorr_k2_values.csv',
     'lnb2': OUTPUT_DIR / 'uncor_lnb2_values.csv',
     'lnb2_corr': OUTPUT_DIR / 'szacorr_lnb1_values.csv',
-    'bello': OUTPUT_DIR / 'Bellouin2013.csv'
+    'lnnd_o_lnaod': OUTPUT_DIR / 'coef_lnnd_vs_lnaod.csv'
 }
 
 # Season mapping and order
@@ -150,14 +150,26 @@ def spatial_interpolate_grid(df_grid, value_cols, n_neighbors=15, power=2):
 
 # -------------------------- IO / Coefficient Table Helpers --------------------------
 def melt_slope_table(df, value_name):
-    """Melt coefficient tables to long format (ocean, season, value)."""
+    """Melt coefficient tables to long format (ocean, season, value).
+    
+    Handles both wide format (Ocean as id, seasons as columns) and
+    long format (Ocean, Season, Slope columns).
+    """
     df = df.rename(columns={'Ocean': 'ocean'})
     
     # Strip whitespace from string columns only
     for col in df.select_dtypes(include=['object']).columns:
         df[col] = df[col].astype(str).str.strip()
     
-    # Melt and clean string columns
+    # If already in long format (has 'Season' column), just rename
+    if 'Season' in df.columns:
+        df = df.rename(columns={'Season': 'season', 'Slope': value_name})
+        df = df[['ocean', 'season', value_name]]
+        for col in ['ocean', 'season']:
+            df[col] = df[col].str.strip()
+        return df
+    
+    # Wide format: melt
     melted_df = pd.melt(df, id_vars=['ocean'], value_vars=SEASONS,
                         var_name='season', value_name=value_name)
     for col in ['ocean', 'season']:
@@ -356,7 +368,7 @@ if __name__ == "__main__":
     Ac_msk_gm = np.sum(combined_df['Ac'] * combined_df['grid_area_km2']) / np.sum(combined_df['grid_area_km2'].where(~np.isnan(combined_df['Ac'])))
     print(f'Global mean uncorrected cloud mask albedo: {Ac_msk_gm:.2f}')
 
-    irf_base = combined_df['bello'] / 3 * combined_df['swdown'] * combined_df['log_aod_diff']
+    irf_base = combined_df['lnnd_o_lnaod'] / 3 * combined_df['swdown'] * combined_df['log_aod_diff']
 
     combined_df['IRF_ret_orig'] = irf_base * combined_df['cf_ret_liq_mod08'] * combined_df['Ac_ret_orig'] * (1 - combined_df['Ac_ret_orig'])
     combined_df['IRF_ret_corr1'] = irf_base * combined_df['cf_ret_liq_mod08'] * combined_df['k2'] * combined_df['Ac_ret_corr1'] * (1 - combined_df['Ac_ret_corr1'])

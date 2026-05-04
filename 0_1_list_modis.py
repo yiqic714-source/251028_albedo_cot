@@ -18,7 +18,7 @@ def find_mod_granules_terra(year, doy):
     month_str = f"{month:02d}"
     
     # Dynamically construct folder path containing the month
-    mod_dir = f'{mod_folder}/{year}{month_str}S/MOD06_L2.A{year}{doy:03d}'
+    mod_dir = f'{mod_folder}/{year}{month_str}*/MOD06_L2.A{year}{doy:03d}'
     mod_lst = sorted(glob.glob(mod_dir + '*.hdf'))
     mod_lst = delete_no_overlap(mod_lst)
     # print(mod_lst)
@@ -66,16 +66,14 @@ if __name__ == "__main__":
     hemisph = sys.argv[3]
 
     if hemisph == "east":
-        obs_window = [[-60., -23.],[0., 180.]]
-        fname_ending = "lon_0_180"
+        obs_window = [[-60., 60.],[0., 180.]]
     elif hemisph == "west":
-        obs_window = [[-60., -23.],[-180., 0.]]
-        fname_ending = "lon_m180_0"
+        obs_window = [[-60., 60.],[-180., 0.]]
     else:
         print('Only support hemisphere to be east or west')
 
     mod_folder = '/data/chenyiqi/251028_albedo_cot/mod06'
-    pkl_file = mod_folder + f'/MOD06_files_{year}{month:02d}S_{fname_ending}.pkl'
+    pkl_file = mod_folder + f'/MOD06_files_{year}{month:02d}_{hemisph}.pkl'
 
     # Calculate start_doy and end_doy based on months
     start_date = datetime(int(year), month, 1)

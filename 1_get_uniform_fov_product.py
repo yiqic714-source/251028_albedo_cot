@@ -14,7 +14,7 @@ import os
 import time
 import netCDF4 as nc
 import sys
-import uniform_fov_tools as uft
+import utils_uniform_fov as uft
 import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
@@ -344,11 +344,9 @@ if __name__ == "__main__":
     hemisph = sys.argv[3]
 
     if hemisph == "east":
-        obs_window = [[-60., -23.],[0., 180.]]
-        fname_ending = "lon_0_180"
+        obs_window = [[-60., 60.],[0., 180.]]
     elif hemisph == "west":
-        obs_window = [[-60., -23.],[-180., 0.]]
-        fname_ending = "lon_m180_0"
+        obs_window = [[-60., 60.],[-180., 0.]]
     else:
         print('Only support hemisphere to be east or west')
 
@@ -367,20 +365,18 @@ if __name__ == "__main__":
     latlon_land = np.stack((lat_ls[idx], lon_ls[idx]), axis = 1)
 
     # ------------------ read modis and ceres filename lists-----------------------
-    # mod_pkl = f"/data/chenyiqi/251007_tropic/mod06/MOD06_files_{year}_{month:02d}_{month:02d}_{fname_ending}.pkl"
-    mod_pkl = f"/data/chenyiqi/251028_albedo_cot/mod06/MOD06_files_{year}{month:02d}S_{fname_ending}.pkl"
+    mod_pkl = f"/data/chenyiqi/251028_albedo_cot/mod06/MOD06_files_{year}{month:02d}_{hemisph}.pkl"
         
     with open(mod_pkl, "rb") as f:
         mod_file_lst = pickle.load(f)['terra']
 
-    # cer_pkl = f"/data/chenyiqi/251007_tropic/ceres_ssf_L2/CERES_{year}_files_and_times.pkl"
     cer_pkl = f"/data/chenyiqi/251028_albedo_cot/CERES_L2SSF_2020/CERES_{year}_files_and_times.pkl"
     with open(cer_pkl, 'rb') as f:
         ssf_files_times_lst = pickle.load(f)['ssf_files']
 
     # determine output csv filename
     output_fname = mod_pkl.split("MOD06_files_")[-1].replace(".pkl", "")
-    csv_fname = f"/data/chenyiqi/251028_albedo_cot/uniform_fov_product/rsl_{year}{month:02d}S_{fname_ending}.csv"
+    csv_fname = f"/data/chenyiqi/251028_albedo_cot/uniform_fov_product/rsl_{year}{month:02d}_{hemisph}.csv"
 
     # header for csv
     csv_header = ["time", "lat", "lon", 

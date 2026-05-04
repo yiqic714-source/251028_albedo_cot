@@ -7,8 +7,8 @@ from scipy import stats
 import pickle
 import xarray as xr
 import os
-import geom_utils as gu
-import uniform_fov_tools as uft
+import utils_geom as gu
+import utils_uniform_fov as uft
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.colors as mcolors

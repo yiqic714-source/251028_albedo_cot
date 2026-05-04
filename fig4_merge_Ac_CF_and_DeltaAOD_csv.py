@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 
+from util_ocean_season_division import split_by_ocean_season
+
 # -------------------------- Load & Process CERES 2020 Data --------------------------
 # Read raw CERES 2020 dataset
 ceres_file_path = '/home/chenyiqi/251028_albedo_cot/SSFproduct/2020.csv'
@@ -15,17 +17,17 @@ ceres_df['month'] = ceres_df['time'].dt.month
 ceres_df['Ac'] = np.nan
 
 # Define mask for valid data (only calculate Ac for valid rows)
-valid_mask = (
+valid_ac_mask = (
     (ceres_df['cf_ceres'] > 0.1) & 
     (ceres_df['cf_liq_ceres'] / ceres_df['cf_ceres'] > 0.99) & 
     (ceres_df['solar_incoming'] > 1e-10)  # Avoid division by zero
 )
 
 # Calculate Ac for valid rows only (invalid rows remain NaN)
-ceres_df.loc[valid_mask, 'Ac'] = (
-    (ceres_df.loc[valid_mask, 'sw_all'] - ceres_df.loc[valid_mask, 'sw_clr'] * (1 - ceres_df.loc[valid_mask, 'cf_liq_ceres'])) 
-    / ceres_df.loc[valid_mask, 'cf_liq_ceres'] 
-    / ceres_df.loc[valid_mask, 'solar_incoming']
+ceres_df.loc[valid_ac_mask, 'Ac'] = (
+    (ceres_df.loc[valid_ac_mask, 'sw_all'] - ceres_df.loc[valid_ac_mask, 'sw_clr'] * (1 - ceres_df.loc[valid_ac_mask, 'cf_liq_ceres'])) 
+    / ceres_df.loc[valid_ac_mask, 'cf_liq_ceres'] 
+    / ceres_df.loc[valid_ac_mask, 'solar_incoming']
 )
 
 # Filter invalid Ac values (0 < Ac < 1)
@@ -77,6 +79,14 @@ merge_df.to_csv(
     na_rep='NaN'
 )
 
+# -------------------------- Split by Ocean and Season --------------------------
+# Create a synthetic time column from month for the utility function
+merge_df['time'] = pd.to_datetime(merge_df['month'].astype(str) + '-01')
+ocean_season_dir = os.path.join(output_dir, 'ocean_season')
+print("\n" + "="*60)
+print("Splitting by ocean and season...")
+split_by_ocean_season(merge_df, ocean_season_dir, time_col='time')
+
 # -------------------------- Validation Output --------------------------
 print("="*60)
 print("✅ Data Processing Completed Successfully!")
@@ -86,4 +96,5 @@ print(f"📊 Aggregated CERES data rows (Lat/Lon/Month): {len(ceres_avg_df)}")
 print(f"📊 CMIP6 AOD difference data rows: {len(aod_df)}")
 print(f"📊 Merged data rows (all retained, including NaN rows): {len(merge_df)}")
 print(f"💾 Merged file saved to: {output_file}")
+print(f"💾 Ocean-season files saved to: {ocean_season_dir}/")
 print(f"\n📋 Merged data columns: {merge_df.columns.tolist()}")

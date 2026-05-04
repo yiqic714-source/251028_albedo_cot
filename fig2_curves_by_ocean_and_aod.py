@@ -19,6 +19,8 @@ season_dict = {
     'DJF': [12, 1, 2]
 }
 input_dir = "/home/chenyiqi/251028_albedo_cot/processed_data/merged_msk_and_ret_csv/"
+MIN_COT = 2.5
+MIN_CF = 0.1
 columns = [
     'ret_albedo', 'ret_cot_mod', 'ret_cotstd_mod',
     'ret_cot_cer', 'ret_cotstd_cer',
@@ -282,7 +284,7 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
     return k_best, b_best, k_unc, b_unc
 
 
-def preprocess_ocean_data(min_cot_mod08=2.0, min_ret_cot_cer=2.0, min_cf_liq_ceres=None):
+def preprocess_ocean_data():
     """
     Preprocess data for all ocean regions.
     Returns a dict: ocean_name -> processed_data dict
@@ -307,13 +309,12 @@ def preprocess_ocean_data(min_cot_mod08=2.0, min_ret_cot_cer=2.0, min_cf_liq_cer
                 df.loc[df['month'].isin(months), 'season'] = season_name
 
             mask = (
-                (df['cot_mod08'] > min_cot_mod08) &
-                (df['ret_cot_cer'] > min_ret_cot_cer) &
+                (df['cot_mod08'] > MIN_COT) &
+                (df['ret_cot_cer'] > MIN_COT) &
                 (df['ret_albedo'] > 0) & (df['ret_albedo'] < 1) &
                 (df['albedo'] > 0) & (df['albedo'] < 1)
             )
-            if min_cf_liq_ceres is not None:
-                mask = mask & (df['cf_liq_ceres'] > min_cf_liq_ceres)
+            mask = mask & (df['cf_liq_ceres'] > MIN_CF)
             df_filtered = df[mask].dropna().reset_index(drop=True)
 
             if len(df_filtered) == 0:
@@ -552,10 +553,7 @@ def plot_figure(icon_style='nature'):
     if icon_style not in ('nature', 'science'):
         raise ValueError("icon_style must be 'nature' or 'science'.")
 
-    all_processed_ocean_data = preprocess_ocean_data(
-        min_cot_mod08=2.5,
-        min_ret_cot_cer=2.5
-    )
+    all_processed_ocean_data = preprocess_ocean_data()
 
     # LH74 reference line
     x2 = cot_to_x(cot_range)
