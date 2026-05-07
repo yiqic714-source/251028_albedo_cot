@@ -2,32 +2,17 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import odr, stats
 from scipy.interpolate import griddata
 
-# ============================================================
-# Inlined constants and helper functions from Ac_cot_fitting_utils.py
-# ============================================================
+from utils_fitting import (
+    oceans, season_dict, cot_range,
+    cot_to_x, albedo_to_y,
+    mc_fit, format_panel_tag
+)
 
-np.random.seed(0)
-
-oceans = ['NPO', 'NAO', 'TPO', 'TAO', 'TIO', 'SPO', 'SAO', 'SIO']
-season_dict = {
-    'MAM': [3, 4, 5],
-    'JJA': [6, 7, 8],
-    'SON': [9, 10, 11],
-    'DJF': [12, 1, 2]
-}
-input_dir = "/home/chenyiqi/251028_albedo_cot/processed_data/merged_msk_and_ret_csv/"
+input_dir = "/home/chenyiqi/251028_albedo_cot/processed_data/merged_data/"
 MIN_COT = 2.5
 MIN_CF = 0.1
-columns = [
-    'ret_albedo', 'ret_cot_mod', 'ret_cotstd_mod',
-    'ret_cot_cer', 'ret_cotstd_cer',
-    'time', 'lat', 'sw_all', 'sw_clr', 'solar_incoming',
-    'cf_liq_ceres', 'cot_mod08', 'cotstd_mod08', 'sza', 'aod_mod08'
-]
-cot_range = np.exp(np.linspace(np.log(2), 4.50, 15))
 
 
 def cot_to_albedo(cot, method, sza=None, season=None, ocean_name=None):
@@ -123,167 +108,6 @@ def cot_to_albedo(cot, method, sza=None, season=None, ocean_name=None):
         return np.nan
 
 
-def cot_to_x(cot):
-    return np.log(cot)
-
-
-def albedo_to_y(albedo):
-    albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
-    return np.log(albedo / (1 - albedo))
-
-
-def _linear_func(beta, x):
-    return beta[0] * x + beta[1]
-
-
-def _as_sigma_array(sigma, n):
-    sigma = np.asarray(sigma, dtype=float)
-    if sigma.ndim == 0:
-        return np.full(n, float(sigma), dtype=float)
-    sigma = sigma.ravel()
-    if sigma.size != n:
-        raise ValueError("sigma must be scalar or have the same length as the input data.")
-    return sigma.astype(float)
-
-
-def _raw_to_fit_arrays(cot, albedo, cot_sigma, albedo_sigma):
-    cot = np.asarray(cot, dtype=float).ravel()
-    albedo = np.asarray(albedo, dtype=float).ravel()
-    cot_sigma = np.asarray(cot_sigma, dtype=float).ravel()
-    albedo_sigma = np.asarray(albedo_sigma, dtype=float).ravel()
-
-    cot = np.clip(cot, 1e-6, None)
-    albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
-
-    x = cot_to_x(cot)
-    y = albedo_to_y(albedo)
-
-    sx = cot_sigma / cot
-    sy = albedo_sigma / (albedo * (1 - albedo))
-
-    x_scale = np.nanmax(np.abs(x)) if np.any(np.isfinite(x)) else 1.0
-    y_scale = np.nanmax(np.abs(y)) if np.any(np.isfinite(y)) else 1.0
-    sx_floor = max(x_scale * 1e-12, 1e-12)
-    sy_floor = max(y_scale * 1e-12, 1e-12)
-
-    sx = np.where(np.isfinite(sx) & (sx > 0), sx, sx_floor)
-    sy = np.where(np.isfinite(sy) & (sy > 0), sy, sy_floor)
-
-    return x, y, sx, sy
-
-
-def _fit_odr_once(x, y, sx, sy, beta0=None):
-    x = np.asarray(x, dtype=float).ravel()
-    y = np.asarray(y, dtype=float).ravel()
-    sx = np.asarray(sx, dtype=float).ravel()
-    sy = np.asarray(sy, dtype=float).ravel()
-
-    if x.size < 2:
-        raise ValueError("At least 2 points are required.")
-
-    if beta0 is None:
-        k0, b0 = np.polyfit(x, y, 1)
-        beta0 = [k0, b0]
-
-    data = odr.RealData(x, y, sx=sx, sy=sy)
-    model = odr.Model(_linear_func)
-    out = odr.ODR(data, model, beta0=beta0).run()
-    return out.beta[0], out.beta[1]
-
-
-def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42):
-    cot = np.asarray(cot, dtype=float).ravel()
-    albedo = np.asarray(albedo, dtype=float).ravel()
-
-    if cot.size != albedo.size:
-        raise ValueError("cot and albedo must have the same length.")
-
-    cot_sigma = _as_sigma_array(cot_std, cot.size)
-    albedo_sigma = _as_sigma_array(albedo_std, albedo.size)
-
-    mask = (
-        np.isfinite(cot) & np.isfinite(albedo) &
-        np.isfinite(cot_sigma) & np.isfinite(albedo_sigma) &
-        (cot > 0) & (albedo > 0) & (albedo < 1)
-    )
-
-    cot = cot[mask]
-    albedo = albedo[mask]
-    cot_sigma = cot_sigma[mask]
-    albedo_sigma = albedo_sigma[mask]
-
-    if cot.size < 3:
-        return np.nan, np.nan, np.nan, np.nan
-
-    x, y, sx, sy = _raw_to_fit_arrays(cot, albedo, cot_sigma, albedo_sigma)
-
-    try:
-        k_best, b_best = _fit_odr_once(x, y, sx, sy)
-    except Exception:
-        try:
-            lr = stats.linregress(x, y)
-            k_best, b_best = lr.slope, lr.intercept
-        except Exception:
-            return np.nan, np.nan, np.nan, np.nan
-
-    rng = np.random.default_rng(random_seed)
-    n = cot.size
-    base_idx = np.arange(n)
-
-    count = 0
-    mean_k = 0.0
-    mean_b = 0.0
-    M2_k = 0.0
-    M2_b = 0.0
-
-    for _ in range(n_mc):
-        idx = rng.integers(0, n, size=n) if bootstrap else base_idx
-
-        cot_i = cot[idx]
-        albedo_i = albedo[idx]
-        cot_sigma_i = cot_sigma[idx]
-        albedo_sigma_i = albedo_sigma[idx]
-
-        cot_pert = cot_i + rng.normal(0.0, cot_sigma_i)
-        albedo_pert = albedo_i + rng.normal(0.0, albedo_sigma_i)
-
-        cot_pert = np.clip(cot_pert, 1e-6, None)
-        albedo_pert = np.clip(albedo_pert, 1e-6, 1 - 1e-6)
-
-        if np.unique(cot_pert).size < 2:
-            continue
-
-        x_i, y_i, sx_i, sy_i = _raw_to_fit_arrays(
-            cot_pert, albedo_pert, cot_sigma_i, albedo_sigma_i
-        )
-
-        try:
-            ki, bi = _fit_odr_once(x_i, y_i, sx_i, sy_i, beta0=[k_best, b_best])
-        except Exception:
-            try:
-                lr = stats.linregress(x_i, y_i)
-                ki, bi = lr.slope, lr.intercept
-            except Exception:
-                continue
-
-        count += 1
-        dk = ki - mean_k
-        mean_k += dk / count
-        M2_k += dk * (ki - mean_k)
-
-        db = bi - mean_b
-        mean_b += db / count
-        M2_b += db * (bi - mean_b)
-
-    if count < 2:
-        return k_best, b_best, np.nan, np.nan
-
-    k_unc = np.sqrt(M2_k / (count - 1))
-    b_unc = np.sqrt(M2_b / (count - 1))
-
-    return k_best, b_best, k_unc, b_unc
-
-
 def preprocess_ocean_data():
     """
     Preprocess data for all ocean regions.
@@ -294,27 +118,37 @@ def preprocess_ocean_data():
     print("Starting one-time preprocessing for all ocean data...")
 
     for ocean in oceans:
-        file_path = os.path.join(input_dir, f"{ocean}.csv")
+        # Read all season files for this ocean and concatenate
+        dfs = []
+        for season_name in season_dict.keys():
+            file_path = os.path.join(input_dir, f"{ocean}_{season_name}.csv")
+            if not os.path.exists(file_path):
+                continue
+            df_season = pd.read_csv(file_path)
+            df_season['season'] = season_name
+            dfs.append(df_season)
+
+        if not dfs:
+            print(f"{ocean} has no data files, skipping.")
+            all_processed_ocean_data[ocean] = None
+            continue
+
+        df = pd.concat(dfs, ignore_index=True)
 
         try:
-            df = pd.read_csv(file_path, usecols=columns)
-
             df['albedo'] = (
                 (df['sw_all'] - df['sw_clr'] * (1 - df['cf_liq_ceres'])) /
                 df['cf_liq_ceres'] / df['solar_incoming']
             )
-            df['month'] = pd.to_datetime(df['time'], format='mixed').dt.month
-
-            for season_name, months in season_dict.items():
-                df.loc[df['month'].isin(months), 'season'] = season_name
 
             mask = (
+                (df['cf_ceres'] > MIN_CF) &
+                (df['cf_liq_ceres'] / df['cf_ceres'] > 0.99) &
                 (df['cot_mod08'] > MIN_COT) &
                 (df['ret_cot_cer'] > MIN_COT) &
-                (df['ret_albedo'] > 0) & (df['ret_albedo'] < 1) &
-                (df['albedo'] > 0) & (df['albedo'] < 1)
+                (df['ret_albedo'].between(0, 1)) &
+                (df['albedo'].between(0, 1))
             )
-            mask = mask & (df['cf_liq_ceres'] > MIN_CF)
             df_filtered = df[mask].dropna().reset_index(drop=True)
 
             if len(df_filtered) == 0:
@@ -391,15 +225,6 @@ method_specs = {
     'ret': {'idx': 0, 'color': 'blue',    'label': 'ret', 'cot_std': 0.1,  'albedo_std': 0.13},
     'msk': {'idx': None, 'color': 'magenta', 'label': 'msk', 'cot_std': 0.1, 'albedo_std': 0.20},
 }
-
-def format_panel_tag(panel_idx, icon_style):
-    """Format panel tag: 'science' -> A, B, C...; 'nature' -> (a), (b), (c)..."""
-    if icon_style == 'science':
-        letter = chr(ord('A') + panel_idx)
-        return rf'$\mathbf{{{letter}}}$'
-    letter = chr(ord('a') + panel_idx)
-    return rf'$\mathbf{{({letter})}}$'
-
 
 # Panel labels (a-h for 8 subplots)
 panel_labels = [

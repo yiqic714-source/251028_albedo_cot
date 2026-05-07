@@ -136,12 +136,11 @@ def plot_legend_only():
     out_path = os.path.join(FIG_DIR, 'fig3_pie_legend_only.png')
     plt.savefig(out_path, dpi=300, bbox_inches='tight', transparent=True)
     plt.close()
-    print(f"Legend-only figure saved to: {out_path}")
 
 
 if __name__ == "__main__":
     # Read new CSV format: Method, Ocean, Season, Slope, Intercept, Slope_Unc, Intercept_Unc
-    df = pd.read_csv('/home/chenyiqi/251028_albedo_cot/processed_data/coef_ocean_season.csv')
+    df = pd.read_csv('/home/chenyiqi/251028_albedo_cot/processed_data/coef_k_b.csv')
 
     # Compute annual slope as mean of 4 seasons for each method-ocean
     df_annual = df.groupby(['Method', 'Ocean'], as_index=False)['Slope'].mean()
