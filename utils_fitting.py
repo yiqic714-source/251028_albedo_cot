@@ -5,8 +5,11 @@ Shared utility functions and constants for fig2_curves_by_ocean_and_aod.py
 and fig3_bias_attribution.py.
 """
 
+import os
 import numpy as np
+import pandas as pd
 from scipy import odr, stats
+from scipy.interpolate import griddata
 
 np.random.seed(0)
 
@@ -193,6 +196,104 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
     b_unc = np.sqrt(M2_b / (count - 1))
 
     return k_best, b_best, k_unc, b_unc
+
+
+# ============================================================
+# SBDART lookup table interpolation
+# ============================================================
+
+def cot_to_albedo(cot, method, sza=None, table_folder='dcp', ocean=None, season=None):
+    """
+    Compute cloud albedo from COT using various methods.
+
+    Parameters
+    ----------
+    cot : array-like
+        Cloud optical thickness.
+    method : str
+        'sbdart', 'l74', 'quadrature', or 'eddington'.
+    sza : float or array-like, optional
+        Solar zenith angle in degrees. Required for 'sbdart', 'quadrature', 'eddington'.
+    table_folder : str, optional
+        Subfolder name under build_sbdart_lookup_table/ (e.g., 'dcp', 'cp').
+    ocean : str, optional
+        Ocean region name (e.g., 'TPO'). If provided with season, reads region-specific LUT.
+    season : str, optional
+        Season name (e.g., 'MAM'). If provided with ocean, reads region-specific LUT.
+
+    Returns
+    -------
+    array-like
+        Cloud albedo values.
+    """
+    base_path = '/home/chenyiqi/251028_albedo_cot'
+    cot = np.asarray(cot, dtype=float)
+
+    if method == 'sbdart':
+        if table_folder == 'dcp' or table_folder == 'dcp_mono':
+            file_name = 'cot_sza_to_albedo_lookup_table_TPO_MAM.csv'
+        else:
+            file_name = f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv'
+
+        file_path = (
+            f'{base_path}/build_sbdart_lookup_table/'
+            f'cot_sza_to_albedo_lookup_table_{table_folder}/'
+            f'{file_name}'
+        )
+
+        if not os.path.exists(file_path):
+            return np.full(cot.shape, np.nan)
+
+        df = pd.read_csv(file_path, index_col=0)
+        sza_grid = np.array(df.index, dtype=float)
+        cot_grid = np.array(df.columns, dtype=float)
+        albedo_grid = df.values
+
+        sza_mesh, cot_mesh = np.meshgrid(sza_grid, cot_grid, indexing='ij')
+        points = np.column_stack([sza_mesh.ravel(), cot_mesh.ravel()])
+        values = albedo_grid.ravel()
+
+        valid = np.isfinite(values)
+
+        cot_arr = np.atleast_1d(cot)
+        if np.ndim(sza) == 0:
+            sza_arr = np.full_like(cot_arr, sza, dtype=float)
+        else:
+            sza_arr = np.asarray(sza, dtype=float)
+
+        target = np.column_stack([sza_arr, cot_arr])
+
+        albedo = griddata(
+            points[valid],
+            values[valid],
+            target,
+            method='linear',
+            fill_value=np.nan
+        )
+
+        return albedo.reshape(cot_arr.shape)
+
+    if method == 'l74':
+        g = 0.85
+        b = 1 - g
+        return b * cot / (1 + b * cot)
+
+    if method == 'quadrature':
+        g = 0.85
+        mu = np.cos(np.radians(sza))
+        b = np.sqrt(3) / 2 * (1 - g)
+        return (
+            b * cot + (1 / 2 - np.sqrt(3) / 2 * mu) * (1 - np.exp(-cot / mu))
+        ) / (1 + b * cot)
+
+    if method == 'eddington':
+        g = 0.85
+        mu = np.cos(np.radians(sza))
+        return (
+            (1 - g) * cot + (2 / 3 - mu) * (1 - np.exp(-cot / mu))
+        ) / (4 / 3 + (1 - g) * cot)
+
+    raise ValueError(f'Unsupported method: {method}')
 
 
 # ============================================================

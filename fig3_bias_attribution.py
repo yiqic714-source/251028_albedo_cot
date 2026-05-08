@@ -2,11 +2,10 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.interpolate import griddata
 
 from utils_fitting import (
     oceans, season_dict, cot_range, albedo_to_y,
-    cot_to_x, mc_fit, format_panel_tag
+    cot_to_x, cot_to_albedo, mc_fit, format_panel_tag
 )
 
 
@@ -20,71 +19,6 @@ MIN_CF = 0.1
 LINECOLOR = ['steelblue', 'orange', 'coral', 'red', 'purple']
 LINESTYLE = ['-', '-', '--', ':', '-']
 BOX_COLORS = ['red', 'blue']
-
-
-def cot_to_albedo(cot, method, sza=None, table_folder='dcp'):
-    cot = np.asarray(cot, dtype=float)
-
-    if method == 'sbdart':
-        file_path = (
-            f'{BASE_PATH}/build_sbdart_lookup_table/'
-            f'cot_sza_to_albedo_lookup_table_{table_folder}/'
-            f'cot_sza_to_albedo_lookup_table_TPO_MAM.csv'
-        )
-
-        if not os.path.exists(file_path):
-            return np.full(cot.shape, np.nan)
-
-        df = pd.read_csv(file_path, index_col=0)
-        sza_grid = np.array(df.index, dtype=float)
-        cot_grid = np.array(df.columns, dtype=float)
-        albedo_grid = df.values
-
-        sza_mesh, cot_mesh = np.meshgrid(sza_grid, cot_grid, indexing='ij')
-        points = np.column_stack([sza_mesh.ravel(), cot_mesh.ravel()])
-        values = albedo_grid.ravel()
-
-        valid = np.isfinite(values)
-
-        cot_arr = np.atleast_1d(cot)
-        if np.ndim(sza) == 0:
-            sza_arr = np.full_like(cot_arr, sza, dtype=float)
-        else:
-            sza_arr = np.asarray(sza, dtype=float)
-
-        target = np.column_stack([sza_arr, cot_arr])
-
-        albedo = griddata(
-            points[valid],
-            values[valid],
-            target,
-            method='linear',
-            fill_value=np.nan
-        )
-
-        return albedo.reshape(cot_arr.shape)
-
-    if method == 'l74':
-        g = 0.85
-        b = 1 - g
-        return b * cot / (1 + b * cot)
-
-    if method == 'quadrature':
-        g = 0.85
-        mu = np.cos(np.radians(sza))
-        b = np.sqrt(3) / 2 * (1 - g)
-        return (
-            b * cot + (1 / 2 - np.sqrt(3) / 2 * mu) * (1 - np.exp(-cot / mu))
-        ) / (1 + b * cot)
-
-    if method == 'eddington':
-        g = 0.85
-        mu = np.cos(np.radians(sza))
-        return (
-            (1 - g) * cot + (2 / 3 - mu) * (1 - np.exp(-cot / mu))
-        ) / (4 / 3 + (1 - g) * cot)
-
-    raise ValueError(f'Unsupported method: {method}')
 
 
 def weighted_mean(values, weights):
@@ -190,11 +124,11 @@ def calc_slope_diff_for_bin(bin_df, mode, x2):
 
         k_ret, _, _ = calc_global_slope_from_raw(
             ret_cot, ret_albedo, season_vals, x2,
-            cot_std=0.0, albedo_std=0.03, n_mc=1000
+            cot_std=0.0, albedo_std=0.03, n_mc=300
         )
         k_sbd, _, _ = calc_global_slope_from_raw(
             ret_cot, albedo_sbd, season_vals, x2,
-            cot_std=0.0, albedo_std=0.03, n_mc=1000
+            cot_std=0.0, albedo_std=0.03, n_mc=300
         )
 
         return k_sbd - k_ret
@@ -207,11 +141,11 @@ def calc_slope_diff_for_bin(bin_df, mode, x2):
 
         k_msk, _, _ = calc_global_slope_from_raw(
             msk_cot, msk_albedo, season_vals, x2,
-            cot_std=0.10, albedo_std=0.13, n_mc=1000
+            cot_std=0.10, albedo_std=0.13, n_mc=300
         )
         k_ret, _, _ = calc_global_slope_from_raw(
             ret_cot, ret_albedo, season_vals, x2,
-            cot_std=0.10, albedo_std=0.10, n_mc=1000
+            cot_std=0.10, albedo_std=0.20, n_mc=300
         )
 
         return k_ret - k_msk
@@ -308,7 +242,109 @@ def draw_two_boxplot(ax, data, labels, ylabel):
     ax.grid(axis='y', linestyle='--', alpha=0.3)
 
 
-def plot_combined_4panels_v2(icon_style='nature'):
+def load_global_data():
+    """Load and merge all ocean x season data (same as fig2_global_5curves.py)."""
+    dfs = []
+    for ocean in oceans:
+        for season_name in season_dict:
+            file_path = f'{BASE_PATH}/processed_data/merged_data/{ocean}_{season_name}.csv'
+            if not os.path.exists(file_path):
+                continue
+            df = pd.read_csv(file_path)
+            df['season'] = season_name
+            df['ocean'] = ocean
+            dfs.append(df)
+
+    if not dfs:
+        raise FileNotFoundError('No data files found.')
+
+    df = pd.concat(dfs, ignore_index=True)
+
+    df['albedo'] = (
+        (df['sw_all'] - df['sw_clr'] * (1 - df['cf_ceres'])) /
+        df['cf_ceres'] / df['solar_incoming']
+    )
+
+    mask = (
+        (df['cf_ceres'] > MIN_CF) &
+        (df['cf_liq_ceres'] / df['cf_ceres'] > 0.99) &
+        (df['cot_mod08'] > MIN_COT) &
+        (df['ret_cot_cer'] > MIN_COT) &
+        (df['ret_albedo'].between(0, 1)) &
+        (df['albedo'].between(0, 1))
+    )
+
+    return df[mask].dropna()
+
+
+def bin_data_by_cot(df, cot_col, albedo_col, bin_edges):
+    """Bin data by COT and compute mean/std (same as fig2_global_5curves.py)."""
+    labels = pd.cut(df[cot_col], bins=bin_edges, labels=False, include_lowest=True)
+
+    bin_means_cot = []
+    bin_means_alb = []
+    bin_stds_alb = []
+
+    for i in range(len(bin_edges) - 1):
+        mask = labels == i
+        if mask.sum() < 5:
+            continue
+
+        cot_vals = df.loc[mask, cot_col].values
+        alb_vals = df.loc[mask, albedo_col].values
+
+        bin_means_cot.append(np.mean(cot_vals))
+        bin_means_alb.append(np.mean(alb_vals))
+        bin_stds_alb.append(np.std(alb_vals))
+
+    return np.array(bin_means_cot), np.array(bin_means_alb), np.array(bin_stds_alb)
+
+
+def compute_sbdart_albedo_per_point(df, table_folder, sza_col='sza'):
+    """Compute SBDART albedo per data point using per-point SZA (same as fig2_global_5curves.py)."""
+    result = np.full(len(df), np.nan)
+
+    for ocean in oceans:
+        for season_name in season_dict:
+            mask = (df['ocean'] == ocean) & (df['season'] == season_name)
+            if mask.sum() == 0:
+                continue
+
+            result[mask.values] = cot_to_albedo(
+                df.loc[mask, 'ret_cot_cer'].values,
+                'sbdart',
+                sza=df.loc[mask, sza_col].values,
+                table_folder=table_folder,
+                ocean=ocean,
+                season=season_name
+            )
+
+    return result
+
+
+def compute_sbdart_albedo_fixed_sza(df, table_folder, sza=54.4):
+    """Compute SBDART albedo per data point using a fixed SZA."""
+    result = np.full(len(df), np.nan)
+
+    for ocean in oceans:
+        for season_name in season_dict:
+            mask = (df['ocean'] == ocean) & (df['season'] == season_name)
+            if mask.sum() == 0:
+                continue
+
+            result[mask.values] = cot_to_albedo(
+                df.loc[mask, 'ret_cot_cer'].values,
+                'sbdart',
+                sza=sza,
+                table_folder=table_folder,
+                ocean=ocean,
+                season=season_name
+            )
+
+    return result
+
+
+def plot_4panels(icon_style='nature'):
     season_records = process_all_oceans_by_season(n_bins=2)
 
     cot_disp_ratios = [r['cot_disp_ratio'] for r in season_records if np.isfinite(r['cot_disp_ratio'])]
@@ -319,36 +355,41 @@ def plot_combined_4panels_v2(icon_style='nature'):
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6), dpi=300)
 
     # Panel a
-    # Compute k values in ln(COT) vs ln(Ac/(1-Ac)) space
-    x_fit = cot_to_x(cot_range)
+    # Load global data
+    df = load_global_data()
+    print(f'Total data points: {len(df)}')
 
-    alb_sbd = cot_to_albedo(cot_range, 'sbdart', sza=54.5, table_folder='dcp')
+    # Compute k values in ln(COT) vs ln(Ac/(1-Ac)) space
+    x_fit = cot_to_x(df['ret_cot_cer'])
+
+    alb_sbd = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.5, table_folder='dcp')
     y_fit = albedo_to_y(alb_sbd)
     mask = np.isfinite(y_fit)
     k_sbd, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
-    alb_mono = cot_to_albedo(cot_range, 'sbdart', sza=54.5, table_folder='dcp_mono')
+    alb_mono = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.5, table_folder='dcp_mono')
     y_fit = albedo_to_y(alb_mono)
     mask = np.isfinite(y_fit)
     k_mono, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
-    alb_quad = cot_to_albedo(cot_range, 'quadrature', sza=54.5)
+    alb_quad = cot_to_albedo(df['ret_cot_cer'], 'quadrature', sza=54.5)
     y_fit = albedo_to_y(alb_quad)
     mask = np.isfinite(y_fit)
     k_quad, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
+    sorted_idx = np.argsort(df['ret_cot_cer'])
     ax1.plot(
-        cot_range, alb_sbd,
+        df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=LINECOLOR[1], lw=2,
         label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
     )
     ax1.plot(
-        cot_range, alb_mono,
+        df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
         color=LINECOLOR[3], lw=2, linestyle='--',
         label=rf'Sbdart, VS ($k_\mathrm{{dcp}}$={k_mono:.2f})'
     )
     ax1.plot(
-        cot_range, alb_quad,
+        df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
         color=LINECOLOR[0], lw=2,
         label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
     )
@@ -360,49 +401,80 @@ def plot_combined_4panels_v2(icon_style='nature'):
     ax1.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
 
     # Panel b
-    lookup_folders = ['dcp', 'surdcp_gascp', 'gasdcp_surcp', 'dcp', 'cp']
-    lookup_labels = [
-        r'Decoupled ($k_{\mathrm{dcp}}=$',
+    bin_edges = cot_range
+
+    # --- Line 1: Decoupled SBDART (dcp) with fixed sza=54.4 (unchanged) ---
+    ax2.plot(
+        df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
+        color=LINECOLOR[0], lw=2,
+        linestyle=LINESTYLE[0],
+        label=rf'Decoupled ($k_{{\mathrm{{dcp}}}}$={k_sbd:.2f})'
+    )
+
+    # --- Lines 2-3: Fixed sza=54.4, per-point cot, with errorbar ---
+    lookup_folders_fixed_sza = ['gasdcp_surcp', 'surdcp_gascp']
+    lookup_labels_fixed_sza = [
         r'$A_{\mathrm{sfc}}$ Coupled ($k_{\mathrm{cp}}=$',
-        r'Gas Coupled ($k_{\mathrm{cp}}=$',
+        r'Gas Coupled ($k_{\mathrm{cp}}=$'
+    ]
+
+    for idx_offset, folder in enumerate(lookup_folders_fixed_sza):
+        idx = idx_offset + 1  # line index 1, 2
+        print(f'  Computing {folder} with fixed sza=54.4...')
+        alb_vals = compute_sbdart_albedo_fixed_sza(df, folder, sza=54.4)
+        df[f'alb_{folder}'] = alb_vals
+
+        cot_bins, alb_bins, alb_std = bin_data_by_cot(
+            df, 'ret_cot_cer', f'alb_{folder}', bin_edges
+        )
+
+        # mc_fit for k
+        k_val, b_val, _, _ = mc_fit(
+            df['ret_cot_cer'].values,
+            alb_vals,
+            cot_std=0.0,
+            albedo_std=0.03,
+            n_mc=300,
+            bootstrap=True
+        )
+
+        ax2.errorbar(
+            cot_bins, alb_bins, yerr=alb_std,
+            color=LINECOLOR[idx], fmt='o-', lw=2, capsize=3, capthick=1,
+            label=f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f})'
+        )
+
+    # --- Lines 4-5: Per-point sza, with errorbar ---
+    lookup_folders_sza = ['dcp', 'cp']
+    lookup_labels_sza = [
         r'SZA Coupled ($k_{\mathrm{cp}}=$',
         r'All Coupled ($k_{\mathrm{cp}}=$'
     ]
 
-    for idx, folder in enumerate(lookup_folders[:3]):
-        alb_vals = cot_to_albedo(cot_range, 'sbdart', sza=54.4, table_folder=folder)
-        y_fit = albedo_to_y(alb_vals)
-        mask = np.isfinite(y_fit)
-        k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
-        ax2.plot(
-            cot_range, alb_vals,
-            color=LINECOLOR[idx],
-            lw=2,
-            linestyle=LINESTYLE[idx],
-            label=f'{lookup_labels[idx]}{k_val:.2f})'
+    for idx_offset, folder in enumerate(lookup_folders_sza):
+        idx = idx_offset + 3  # line index 3, 4
+        print(f'  Computing {folder} with per-point sza...')
+        alb_vals = compute_sbdart_albedo_per_point(df, folder, sza_col='sza')
+        df[f'alb_{folder}_persza'] = alb_vals
+
+        cot_bins, alb_bins, alb_std = bin_data_by_cot(
+            df, 'ret_cot_cer', f'alb_{folder}_persza', bin_edges
         )
 
-    all_sza = []
-    for ocean in oceans:
-        for season_name in season_dict:
-            path = f'{BASE_PATH}/processed_data/merged_data/{ocean}_{season_name}.csv'
-            if os.path.exists(path):
-                all_sza.extend(pd.read_csv(path)['sza'].dropna().values)
+        # mc_fit for k
+        k_val, b_val, _, _ = mc_fit(
+            df['ret_cot_cer'].values,
+            alb_vals,
+            cot_std=0.0,
+            albedo_std=0.03,
+            n_mc=300,
+            bootstrap=True
+        )
 
-    mean_sza = np.mean(all_sza)
-    print(f'Global mean SZA: {mean_sza:.2f}')
-    for idx in [3, 4]:
-        folder = lookup_folders[idx]
-        alb_vals = cot_to_albedo(cot_range, 'sbdart', sza=mean_sza, table_folder=folder)
-        y_fit = albedo_to_y(alb_vals)
-        mask = np.isfinite(y_fit)
-        k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
-        ax2.plot(
-            cot_range, alb_vals,
-            color=LINECOLOR[idx],
-            lw=2,
-            linestyle=LINESTYLE[idx],
-            label=f'{lookup_labels[idx]}{k_val:.2f})'
+        ax2.errorbar(
+            cot_bins, alb_bins, yerr=alb_std,
+            color=LINECOLOR[idx], fmt='o-', lw=2, capsize=3, capthick=1,
+            label=f'{lookup_labels_sza[idx_offset]}{k_val:.2f})'
         )
 
     ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -445,4 +517,4 @@ def plot_combined_4panels_v2(icon_style='nature'):
 
 
 if __name__ == '__main__':
-    plot_combined_4panels_v2(icon_style='nature')
+    plot_4panels(icon_style='nature')
