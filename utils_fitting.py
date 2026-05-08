@@ -23,7 +23,7 @@ season_dict = {
     'DJF': [12, 1, 2]
 }
 
-cot_range = np.exp(np.linspace(np.log(2), 4.50, 15))
+cot_range = np.exp(np.linspace(np.log(2.5), np.log(62.5), 15))
 
 
 # ============================================================

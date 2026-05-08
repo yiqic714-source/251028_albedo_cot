@@ -318,40 +318,37 @@ def plot_combined_4panels_v2(icon_style='nature'):
 
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6), dpi=300)
 
-    x_raw = cot_range
-    sza_target = 54.5
-
     # Panel a
     # Compute k values in ln(COT) vs ln(Ac/(1-Ac)) space
-    x_fit = cot_to_x(x_raw)
+    x_fit = cot_to_x(cot_range)
 
-    alb_sbd = cot_to_albedo(x_raw, 'sbdart', sza=sza_target, table_folder='dcp')
+    alb_sbd = cot_to_albedo(cot_range, 'sbdart', sza=54.5, table_folder='dcp')
     y_fit = albedo_to_y(alb_sbd)
     mask = np.isfinite(y_fit)
     k_sbd, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
-    alb_mono = cot_to_albedo(x_raw, 'sbdart', sza=sza_target, table_folder='dcp_mono')
+    alb_mono = cot_to_albedo(cot_range, 'sbdart', sza=54.5, table_folder='dcp_mono')
     y_fit = albedo_to_y(alb_mono)
     mask = np.isfinite(y_fit)
     k_mono, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
-    alb_quad = cot_to_albedo(x_raw, 'quadrature', sza=sza_target)
+    alb_quad = cot_to_albedo(cot_range, 'quadrature', sza=54.5)
     y_fit = albedo_to_y(alb_quad)
     mask = np.isfinite(y_fit)
     k_quad, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
 
     ax1.plot(
-        x_raw, alb_sbd,
+        cot_range, alb_sbd,
         color=LINECOLOR[1], lw=2,
         label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
     )
     ax1.plot(
-        x_raw, alb_mono,
+        cot_range, alb_mono,
         color=LINECOLOR[3], lw=2, linestyle='--',
         label=rf'Sbdart, VS ($k_\mathrm{{dcp}}$={k_mono:.2f})'
     )
     ax1.plot(
-        x_raw, alb_quad,
+        cot_range, alb_quad,
         color=LINECOLOR[0], lw=2,
         label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
     )
@@ -363,7 +360,7 @@ def plot_combined_4panels_v2(icon_style='nature'):
     ax1.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
 
     # Panel b
-    lookup_folders = ['dcp', 'surdcp_gascp', 'gasdcp_surcp', 'dcp', 'surdcp_gascp']
+    lookup_folders = ['dcp', 'surdcp_gascp', 'gasdcp_surcp', 'dcp', 'cp']
     lookup_labels = [
         r'Decoupled ($k_{\mathrm{dcp}}=$',
         r'$A_{\mathrm{sfc}}$ Coupled ($k_{\mathrm{cp}}=$',
@@ -373,12 +370,12 @@ def plot_combined_4panels_v2(icon_style='nature'):
     ]
 
     for idx, folder in enumerate(lookup_folders[:3]):
-        alb_vals = cot_to_albedo(x_raw, 'sbdart', sza=54.4, table_folder=folder)
+        alb_vals = cot_to_albedo(cot_range, 'sbdart', sza=54.4, table_folder=folder)
         y_fit = albedo_to_y(alb_vals)
         mask = np.isfinite(y_fit)
         k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
         ax2.plot(
-            x_raw, alb_vals,
+            cot_range, alb_vals,
             color=LINECOLOR[idx],
             lw=2,
             linestyle=LINESTYLE[idx],
@@ -393,14 +390,15 @@ def plot_combined_4panels_v2(icon_style='nature'):
                 all_sza.extend(pd.read_csv(path)['sza'].dropna().values)
 
     mean_sza = np.mean(all_sza)
+    print(f'Global mean SZA: {mean_sza:.2f}')
     for idx in [3, 4]:
         folder = lookup_folders[idx]
-        alb_vals = cot_to_albedo(x_raw, 'sbdart', sza=mean_sza, table_folder=folder)
+        alb_vals = cot_to_albedo(cot_range, 'sbdart', sza=mean_sza, table_folder=folder)
         y_fit = albedo_to_y(alb_vals)
         mask = np.isfinite(y_fit)
         k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
         ax2.plot(
-            x_raw, alb_vals,
+            cot_range, alb_vals,
             color=LINECOLOR[idx],
             lw=2,
             linestyle=LINESTYLE[idx],
