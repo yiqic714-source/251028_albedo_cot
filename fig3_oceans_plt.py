@@ -99,15 +99,15 @@ if __name__ == "__main__":
     # land edge
     ax.add_feature(cfeature.LAND, facecolor='white', edgecolor='black', linewidth=0.5, zorder=2)
     # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
-    ax.set_title(format_panel_tag(0, 'nature'), fontsize=10, loc='left')
+    ax.set_title(format_panel_tag(0, 'nature'), fontsize=16, loc='left')
     ax.set_extent([-180, 180, -60, 60], crs=ccrs.PlateCarree())
     
     # Gridlines
     gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', linestyle='--', alpha=0.0, )
     gl.top_labels = False
     gl.right_labels = False
-    gl.xlabel_style = {'size': 8}
-    gl.ylabel_style = {'size': 8}
+    gl.xlabel_style = {'size': 10}
+    gl.ylabel_style = {'size': 10}
 
     # save figure
     out_dir = 'figs'

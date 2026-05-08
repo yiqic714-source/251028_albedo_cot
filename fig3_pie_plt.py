@@ -51,37 +51,8 @@ def plot_pie_chart(ocean, delta1, delta2, delta3, delta4, slope):
         wedgeprops=dict(edgecolor='w', linewidth=4)
     )
 
-    for i, w in enumerate(wedges):
-        ang = (w.theta2 + w.theta1) / 2
-        x = np.cos(np.deg2rad(ang)) * 0.63
-        y = np.sin(np.deg2rad(ang)) * 0.63
-
-        ax.text(
-            x, y,
-            f"{pie_sizes[i]:.2f}",
-            ha='center', va='center',
-            fontsize=32, weight='bold',
-            color='k'
-        )
-
-    if ocean == 'Global':
-        ax.legend(
-            wedges,
-            labels,
-            loc='center left',
-            bbox_to_anchor=(1.0, 0.5),
-            fontsize=15,
-            borderaxespad=0.0,
-            ncol=len(labels),
-            frameon=True,
-            facecolor='white',
-            edgecolor='lightgray',
-            framealpha=0.7,
-            columnspacing=5
-        )
-
     ax.text(
-        0, -1.25,
+        -1.6, 0,
         f'{ocean}',
         ha='center', va='center',
         fontsize=45,
@@ -123,7 +94,7 @@ def plot_legend_only():
         dummy_wedges,
         labels,
         loc='center',
-        fontsize=18,
+        fontsize=20,
         ncol=len(labels),
         frameon=True,
         facecolor='white',

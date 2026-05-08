@@ -2,290 +2,89 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy import odr, stats
 from scipy.interpolate import griddata
 
-np.random.seed(0)
+from utils_fitting import (
+    oceans, season_dict, cot_range, albedo_to_y,
+    cot_to_x, mc_fit, format_panel_tag
+)
+
 
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
 FIG_SAVE_PATH = f'{BASE_PATH}/figs/fig3_bias_attribution.png'
 os.makedirs(os.path.dirname(FIG_SAVE_PATH), exist_ok=True)
 
-season_dict = {'MAM': [3, 4, 5], 'JJA': [6, 7, 8], 'SON': [9, 10, 11], 'DJF': [12, 1, 2]}
-oceans = ['NPO', 'NAO', 'TPO', 'TAO', 'TIO', 'SPO', 'SAO', 'SIO']
-sza_list = [55, 15]
-cot_range = np.exp(np.linspace(np.log(3), 3, 15))
+MIN_COT = 2.5
+MIN_CF = 0.1
 
-METHODS = ['sbdart', 'quadrature']
-LINECOLOR = ['steelblue', 'orange', 'coral', 'red']
-LINESTYLE = ['-', '-', '--', ':']
-
-# ============================================================
-# Inlined fitting functions (from Ac_cot_fitting_utils.py)
-# ============================================================
-
-def _linear_func(beta, x):
-    return beta[0] * x + beta[1]
-
-
-def _as_sigma_array(sigma, n):
-    sigma = np.asarray(sigma, dtype=float)
-    if sigma.ndim == 0:
-        return np.full(n, float(sigma), dtype=float)
-    sigma = sigma.ravel()
-    if sigma.size != n:
-        raise ValueError("sigma must be scalar or have the same length as the input data.")
-    return sigma.astype(float)
-
-
-def _raw_to_fit_arrays(cot, albedo, cot_sigma, albedo_sigma):
-    cot = np.asarray(cot, dtype=float).ravel()
-    albedo = np.asarray(albedo, dtype=float).ravel()
-    cot_sigma = np.asarray(cot_sigma, dtype=float).ravel()
-    albedo_sigma = np.asarray(albedo_sigma, dtype=float).ravel()
-
-    cot = np.clip(cot, 1e-6, None)
-    albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
-
-    x = cot_to_x(cot)
-    y = albedo_to_y(albedo)
-
-    sx = cot_sigma / cot
-    sy = albedo_sigma / (albedo * (1 - albedo))
-
-    x_scale = np.nanmax(np.abs(x)) if np.any(np.isfinite(x)) else 1.0
-    y_scale = np.nanmax(np.abs(y)) if np.any(np.isfinite(y)) else 1.0
-    sx_floor = max(x_scale * 1e-12, 1e-12)
-    sy_floor = max(y_scale * 1e-12, 1e-12)
-
-    sx = np.where(np.isfinite(sx) & (sx > 0), sx, sx_floor)
-    sy = np.where(np.isfinite(sy) & (sy > 0), sy, sy_floor)
-
-    return x, y, sx, sy
-
-
-def _fit_odr_once(x, y, sx, sy, beta0=None):
-    x = np.asarray(x, dtype=float).ravel()
-    y = np.asarray(y, dtype=float).ravel()
-    sx = np.asarray(sx, dtype=float).ravel()
-    sy = np.asarray(sy, dtype=float).ravel()
-
-    if x.size < 2:
-        raise ValueError("At least 2 points are required.")
-
-    if beta0 is None:
-        k0, b0 = np.polyfit(x, y, 1)
-        beta0 = [k0, b0]
-
-    data = odr.RealData(x, y, sx=sx, sy=sy)
-    model = odr.Model(_linear_func)
-    out = odr.ODR(data, model, beta0=beta0).run()
-    return out.beta[0], out.beta[1]
-
-
-def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42):
-    cot = np.asarray(cot, dtype=float).ravel()
-    albedo = np.asarray(albedo, dtype=float).ravel()
-
-    if cot.size != albedo.size:
-        raise ValueError("cot and albedo must have the same length.")
-
-    cot_sigma = _as_sigma_array(cot_std, cot.size)
-    albedo_sigma = _as_sigma_array(albedo_std, albedo.size)
-
-    mask = (
-        np.isfinite(cot) & np.isfinite(albedo) &
-        np.isfinite(cot_sigma) & np.isfinite(albedo_sigma) &
-        (cot > 0) & (albedo > 0) & (albedo < 1)
-    )
-
-    cot = cot[mask]
-    albedo = albedo[mask]
-    cot_sigma = cot_sigma[mask]
-    albedo_sigma = albedo_sigma[mask]
-
-    if cot.size < 3:
-        return np.nan, np.nan, np.nan, np.nan
-
-    x, y, sx, sy = _raw_to_fit_arrays(cot, albedo, cot_sigma, albedo_sigma)
-
-    try:
-        k_best, b_best = _fit_odr_once(x, y, sx, sy)
-    except Exception:
-        try:
-            lr = stats.linregress(x, y)
-            k_best, b_best = lr.slope, lr.intercept
-        except Exception:
-            return np.nan, np.nan, np.nan, np.nan
-
-    rng = np.random.default_rng(random_seed)
-    n = cot.size
-    base_idx = np.arange(n)
-
-    count = 0
-    mean_k = 0.0
-    mean_b = 0.0
-    M2_k = 0.0
-    M2_b = 0.0
-
-    for _ in range(n_mc):
-        idx = rng.integers(0, n, size=n) if bootstrap else base_idx
-
-        cot_i = cot[idx]
-        albedo_i = albedo[idx]
-        cot_sigma_i = cot_sigma[idx]
-        albedo_sigma_i = albedo_sigma[idx]
-
-        cot_pert = cot_i + rng.normal(0.0, cot_sigma_i)
-        albedo_pert = albedo_i + rng.normal(0.0, albedo_sigma_i)
-
-        cot_pert = np.clip(cot_pert, 1e-6, None)
-        albedo_pert = np.clip(albedo_pert, 1e-6, 1 - 1e-6)
-
-        if np.unique(cot_pert).size < 2:
-            continue
-
-        x_i, y_i, sx_i, sy_i = _raw_to_fit_arrays(
-            cot_pert, albedo_pert, cot_sigma_i, albedo_sigma_i
-        )
-
-        try:
-            ki, bi = _fit_odr_once(x_i, y_i, sx_i, sy_i, beta0=[k_best, b_best])
-        except Exception:
-            try:
-                lr = stats.linregress(x_i, y_i)
-                ki, bi = lr.slope, lr.intercept
-            except Exception:
-                continue
-
-        count += 1
-        dk = ki - mean_k
-        mean_k += dk / count
-        M2_k += dk * (ki - mean_k)
-
-        db = bi - mean_b
-        mean_b += db / count
-        M2_b += db * (bi - mean_b)
-
-    if count < 2:
-        return k_best, b_best, np.nan, np.nan
-
-    k_unc = np.sqrt(M2_k / (count - 1))
-    b_unc = np.sqrt(M2_b / (count - 1))
-
-    return k_best, b_best, k_unc, b_unc
-
-
-
-def format_panel_tag(panel_idx, icon_style):
-    if icon_style == 'science':
-        letter = chr(ord('A') + panel_idx)
-        return rf'$\mathbf{{{letter}}}$'
-
-    letter = chr(ord('a') + panel_idx)
-    return rf'$\mathbf{{({letter})}}$'
-
-
-def cot_to_x(cot):
-    return np.log(cot)
-
-
-def albedo_to_y(albedo):
-    albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
-    return np.log(albedo / (1 - albedo))
+LINECOLOR = ['steelblue', 'orange', 'coral', 'red', 'purple']
+LINESTYLE = ['-', '-', '--', ':', '-']
+BOX_COLORS = ['red', 'blue']
 
 
 def cot_to_albedo(cot, method, sza=None, table_folder='dcp'):
-    """
-    Calculate cloud albedo from cloud optical thickness.
+    cot = np.asarray(cot, dtype=float)
 
-    Parameters
-    ----------
-    table_folder : str
-        Folder containing lookup tables.
-        Supported examples: 'dcp', 'cp', 'gasdcp_surcp', 'surdcp_gascp', 'dcp_mono'
-    """
     if method == 'sbdart':
-        albedo = np.full(np.asarray(cot).shape, np.nan)
-        seasons_to_use = ['MAM']
-        ocean_to_use = 'TPO'
+        file_path = (
+            f'{BASE_PATH}/build_sbdart_lookup_table/'
+            f'cot_sza_to_albedo_lookup_table_{table_folder}/'
+            f'cot_sza_to_albedo_lookup_table_TPO_MAM.csv'
+        )
 
-        for season_p in seasons_to_use:
-            file_path = (
-                f'{BASE_PATH}/build_sbdart_lookup_table/'
-                f'cot_sza_to_albedo_lookup_table_{table_folder}/'
-                f'cot_sza_to_albedo_lookup_table_{ocean_to_use}_{season_p}.csv'
-            )
+        if not os.path.exists(file_path):
+            return np.full(cot.shape, np.nan)
 
-            if not os.path.exists(file_path):
-                continue
+        df = pd.read_csv(file_path, index_col=0)
+        sza_grid = np.array(df.index, dtype=float)
+        cot_grid = np.array(df.columns, dtype=float)
+        albedo_grid = df.values
 
-            try:
-                df = pd.read_csv(file_path, index_col=0)
-            except Exception as e:
-                print(f"Warning: Could not read {file_path}: {e}")
-                continue
+        sza_mesh, cot_mesh = np.meshgrid(sza_grid, cot_grid, indexing='ij')
+        points = np.column_stack([sza_mesh.ravel(), cot_mesh.ravel()])
+        values = albedo_grid.ravel()
 
-            sz_grid = np.array(df.index, float)
-            tval_grid = np.array(df.columns, float)
-            albedo_grid = df.values
+        valid = np.isfinite(values)
 
-            sz_mesh, tval_mesh = np.meshgrid(sz_grid, tval_grid, indexing='ij')
-            points = np.column_stack([sz_mesh.ravel(), tval_mesh.ravel()])
-            values = albedo_grid.ravel()
+        cot_arr = np.atleast_1d(cot)
+        if np.ndim(sza) == 0:
+            sza_arr = np.full_like(cot_arr, sza, dtype=float)
+        else:
+            sza_arr = np.asarray(sza, dtype=float)
 
-            valid_mask = ~np.isnan(values)
-            if not np.any(valid_mask):
-                continue
+        target = np.column_stack([sza_arr, cot_arr])
 
-            cot_arr = np.atleast_1d(cot)
-            if np.ndim(sza) == 0:
-                sza_arr = np.full_like(cot_arr, sza, dtype=float)
-            else:
-                sza_arr = np.asarray(sza, dtype=float)
+        albedo = griddata(
+            points[valid],
+            values[valid],
+            target,
+            method='linear',
+            fill_value=np.nan
+        )
 
-            target_points = np.column_stack([sza_arr, cot_arr])
-            albedo_interp = griddata(
-                points[valid_mask],
-                values[valid_mask],
-                target_points,
-                method='linear',
-                fill_value=np.nan
-            )
-            albedo = albedo_interp
+        return albedo.reshape(cot_arr.shape)
 
-        return albedo
-
-    elif method == 'l74':
+    if method == 'l74':
         g = 0.85
         b = 1 - g
-        cot = np.asarray(cot)
         return b * cot / (1 + b * cot)
 
-    elif method == 'quadrature':
-        cot = np.asarray(cot)
+    if method == 'quadrature':
         g = 0.85
-        miu = np.cos(np.radians(sza))
+        mu = np.cos(np.radians(sza))
         b = np.sqrt(3) / 2 * (1 - g)
-        return (b * cot + (1 / 2 - np.sqrt(3) / 2 * miu) * (1 - np.exp(-cot / miu))) / (1 + b * cot)
+        return (
+            b * cot + (1 / 2 - np.sqrt(3) / 2 * mu) * (1 - np.exp(-cot / mu))
+        ) / (1 + b * cot)
 
-    elif method == 'eddington':
-        cot = np.asarray(cot)
+    if method == 'eddington':
         g = 0.85
-        miu = np.cos(np.radians(sza))
-        return ((1 - g) * cot + (2 / 3 - miu) * (1 - np.exp(-cot / miu))) / (4 / 3 + (1 - g) * cot)
+        mu = np.cos(np.radians(sza))
+        return (
+            (1 - g) * cot + (2 / 3 - mu) * (1 - np.exp(-cot / mu))
+        ) / (4 / 3 + (1 - g) * cot)
 
-    else:
-        print(f"Supported methods: {METHODS + ['l74']}")
-        return np.nan
-
-
-def calculate_albedo_curves():
-    albedo_results = {}
-    for method in METHODS:
-        for sza in sza_list:
-            albedo_results[f'{method}_{sza}'] = cot_to_albedo(cot_range, method=method, sza=sza)
-    return albedo_results
+    raise ValueError(f'Unsupported method: {method}')
 
 
 def weighted_mean(values, weights):
@@ -293,30 +92,21 @@ def weighted_mean(values, weights):
     weights = np.asarray(weights, dtype=float)
 
     mask = np.isfinite(values) & np.isfinite(weights)
-    if not np.any(mask):
+    if not np.any(mask) or np.sum(weights[mask]) <= 0:
         return np.nan
 
-    values = values[mask]
-    weights = weights[mask]
-
-    if weights.sum() <= 0:
-        return np.nan
-
-    return np.sum(values * weights) / np.sum(weights)
+    return np.sum(values[mask] * weights[mask]) / np.sum(weights[mask])
 
 
-def calc_global_slope_from_raw(cot, albedo, season, x2, cot_std=0.0, albedo_std=0.0, n_mc=100):
-    """
-    Compute season-weighted global slope/intercept using acfu.mc_fit
-    on raw COT and raw albedo.
-    """
+def calc_global_slope_from_raw(
+    cot, albedo, season, x2,
+    cot_std=0.0, albedo_std=0.0, n_mc=100
+):
     cot = np.asarray(cot, dtype=float)
     albedo = np.asarray(albedo, dtype=float)
     season = np.asarray(season)
 
-    slopes, intercepts, weights = [], [], []
-
-    valid_mask = (
+    valid = (
         np.isfinite(cot) &
         np.isfinite(albedo) &
         (cot > 0) &
@@ -324,8 +114,10 @@ def calc_global_slope_from_raw(cot, albedo, season, x2, cot_std=0.0, albedo_std=
         (albedo < 1)
     )
 
+    slopes, intercepts, weights = [], [], []
+
     for s in season_dict:
-        mask = valid_mask & (season == s)
+        mask = valid & (season == s)
         if np.sum(mask) < 5:
             continue
 
@@ -339,304 +131,320 @@ def calc_global_slope_from_raw(cot, albedo, season, x2, cot_std=0.0, albedo_std=
             random_seed=42
         )
 
-
         if np.isfinite(k):
             slopes.append(k)
             intercepts.append(b)
             weights.append(np.sum(mask))
 
-    if len(weights) == 0:
+    if not weights:
         return np.nan, np.nan, np.full_like(x2, np.nan, dtype=float)
 
-    global_k = weighted_mean(slopes, weights)
-    global_b = weighted_mean(intercepts, weights)
-    return global_k, global_b, global_k * x2 + global_b
+    k_global = weighted_mean(slopes, weights)
+    b_global = weighted_mean(intercepts, weights)
+
+    return k_global, b_global, k_global * x2 + b_global
 
 
-def split_data_by_percentile(df, col_name, n_bins):
-    percentiles = np.linspace(0, 100, n_bins + 1)
-    bin_edges = np.unique(np.percentile(df[col_name].dropna(), percentiles))
-    n_bins = len(bin_edges) - 1 if len(bin_edges) < n_bins + 1 else n_bins
-    df['group_label'] = pd.cut(df[col_name], bins=bin_edges, labels=False, include_lowest=True)
-    return df['group_label'].values, bin_edges
+def split_data_by_percentile(df, col_name, n_bins=2):
+    edges = np.unique(np.percentile(df[col_name].dropna(), np.linspace(0, 100, n_bins + 1)))
+    labels = pd.cut(df[col_name], bins=edges, labels=False, include_lowest=True)
+    return labels.values, edges
 
 
-def process_all_oceans(n_bins=2):
-    all_results = []
+def prepare_dataframe(ocean, season_name):
+    file_path = f'{BASE_PATH}/processed_data/merged_data/{ocean}_{season_name}.csv'
+    if not os.path.exists(file_path):
+        return None
+
+    df = pd.read_csv(file_path)
+    df['season'] = season_name
+
+    df['albedo'] = (
+        (df['sw_all'] - df['sw_clr'] * (1 - df['cf_ceres'])) /
+        df['cf_ceres'] / df['solar_incoming']
+    )
+
+    df['cot_disp'] = df['ret_cotstd_cer'] / df['ret_cot_cer']
+    df['unr_fra'] = 1 - df['cf_ret_liq_mod08'] - df['clr_fra']
+
+    mask = (
+        (df['cf_ceres'] > MIN_CF) &
+        (df['cf_liq_ceres'] / df['cf_ceres'] > 0.99) &
+        (df['cot_mod08'] > MIN_COT) &
+        (df['ret_cot_cer'] > MIN_COT) &
+        (df['ret_albedo'].between(0, 1)) &
+        (df['albedo'].between(0, 1)) &
+        df['aod_mod08'].notna()
+    )
+
+    return df[mask].dropna()
+
+
+def calc_slope_diff_for_bin(bin_df, mode, x2):
+    season_vals = bin_df['season'].values
+
+    if mode == 'cot_disp':
+        ret_cot = bin_df['ret_cot_cer'].values
+        ret_albedo = bin_df['ret_albedo'].values
+        albedo_sbd = cot_to_albedo(ret_cot, 'sbdart', sza=bin_df['sza'].values, table_folder='cp')
+
+        k_ret, _, _ = calc_global_slope_from_raw(
+            ret_cot, ret_albedo, season_vals, x2,
+            cot_std=0.0, albedo_std=0.03, n_mc=1000
+        )
+        k_sbd, _, _ = calc_global_slope_from_raw(
+            ret_cot, albedo_sbd, season_vals, x2,
+            cot_std=0.0, albedo_std=0.03, n_mc=1000
+        )
+
+        return k_sbd - k_ret
+
+    if mode == 'unr_fra':
+        msk_cot = bin_df['cot_mod08'].values
+        msk_albedo = bin_df['albedo'].values
+        ret_cot = bin_df['ret_cot_cer'].values
+        ret_albedo = bin_df['ret_albedo'].values
+
+        k_msk, _, _ = calc_global_slope_from_raw(
+            msk_cot, msk_albedo, season_vals, x2,
+            cot_std=0.10, albedo_std=0.13, n_mc=1000
+        )
+        k_ret, _, _ = calc_global_slope_from_raw(
+            ret_cot, ret_albedo, season_vals, x2,
+            cot_std=0.10, albedo_std=0.10, n_mc=1000
+        )
+
+        return k_ret - k_msk
+
+    raise ValueError(f'Unsupported mode: {mode}')
+
+
+def calc_high_low_ratio(df, split_col, mode, x2, n_bins=2):
+    labels, edges = split_data_by_percentile(df.copy(), split_col, n_bins)
+
+    bin_values = {}
+    for idx in range(len(edges) - 1):
+        bin_df = df[labels == idx].copy()
+        if len(bin_df) < 5:
+            continue
+
+        bin_values[idx] = calc_slope_diff_for_bin(bin_df, mode, x2)
+
+    low = bin_values.get(0, np.nan)
+    high = bin_values.get(1, np.nan)
+
+    if np.isfinite(low) and np.isfinite(high) and low > 0:
+        return high / low
+
+    return np.nan
+
+
+def process_all_oceans_by_season(n_bins=2):
     cot_ref = np.exp(np.linspace(np.log(3), 4.5, 15))
     x2 = cot_to_x(cot_ref)
 
+    records = []
+
     for ocean in oceans:
-        file_path = f"{BASE_PATH}/processed_data/merged_msk_and_ret_csv/{ocean}.csv"
-        cols = [
-            'ret_albedo', 'ret_cot_cer', 'ret_cotstd_cer', 'time', 'lat',
-            'sw_all', 'sw_clr', 'solar_incoming', 'cf_ceres', 'cot_mod08',
-            'sza', 'cf_ret_liq_mod08', 'clr_fra'
-        ]
-        df = pd.read_csv(file_path, usecols=cols)
-
-        df['albedo'] = (
-            (df['sw_all'] - df['sw_clr'] * (1 - df['cf_ceres'])) /
-            df['cf_ceres'] / df['solar_incoming']
-        )
-        df['month'] = pd.to_datetime(df['time'], format='mixed').dt.month
-
-        df['cot_disp'] = df['ret_cotstd_cer'] / df['ret_cot_cer']
-        df['unr_fra'] = (1 - df['cf_ret_liq_mod08'] - df['clr_fra'])
-
-        mask = (
-            (df['cf_ceres'] > 0.1) &
-            (df['cot_mod08'] > 2.5) &
-            (df['ret_cot_cer'] > 2.5) &
-            (df['ret_albedo'].between(0, 1)) &
-            (df['albedo'].between(0, 1))
-        )
-        df = df[mask].dropna()
-
-        for s, ms in season_dict.items():
-            df.loc[df['month'].isin(ms), 'season'] = s
-        df['season'] = df['season'].astype('object')
-
-        cot_disp_res = []
-        g0_label, _ = split_data_by_percentile(df.copy(), 'cot_disp', n_bins)
-
-        for idx in range(n_bins):
-            bin_df = df[g0_label == idx].copy()
-            if len(bin_df) < 5:
+        for season_name in season_dict:
+            df = prepare_dataframe(ocean, season_name)
+            if df is None or len(df) < 10:
                 continue
 
-            ret_cot = bin_df['ret_cot_cer'].values
-            ret_albedo = bin_df['ret_albedo'].values
-            season_vals = bin_df['season'].values
-
-            albedo_sbd = cot_to_albedo(
-                ret_cot,
-                'sbdart',
-                sza=bin_df['sza'].values,
-                table_folder='cp'
-            )
-
-            k_ret, _, _ = calc_global_slope_from_raw(
-                ret_cot, ret_albedo, season_vals, x2,
-                cot_std=0.0, albedo_std=0.03, n_mc=1000
-            )
-            k_sbd, _, _ = calc_global_slope_from_raw(
-                ret_cot, albedo_sbd, season_vals, x2,
-                cot_std=0.0, albedo_std=0.03, n_mc=1000
-            )
-
-            cot_disp_res.append({
+            records.append({
                 'Ocean': ocean,
-                'Bin': idx,
-                'Slope_Diff': k_sbd - k_ret
+                'Season': season_name,
+                'cot_disp_ratio': calc_high_low_ratio(df, 'cot_disp', 'cot_disp', x2, n_bins),
+                'unr_fra_ratio': calc_high_low_ratio(df, 'unr_fra', 'unr_fra', x2, n_bins),
+                'aod_cot_ratio': calc_high_low_ratio(df, 'aod_mod08', 'cot_disp', x2, n_bins),
+                'aod_unr_ratio': calc_high_low_ratio(df, 'aod_mod08', 'unr_fra', x2, n_bins),
             })
 
-        unr_fra_res = []
-        g1_label, edges = split_data_by_percentile(df.copy(), 'unr_fra', n_bins)
-        df['unr_bin'] = pd.cut(df['unr_fra'], bins=edges, labels=False, include_lowest=True)
-
-        for idx in range(len(edges) - 1):
-            bin_df = df[g1_label == idx].copy()
-            if len(bin_df) < 5:
-                continue
-
-            msk_cot = bin_df['cot_mod08'].values
-            msk_albedo = bin_df['albedo'].values
-            ret_cot = bin_df['ret_cot_cer'].values
-            ret_albedo = bin_df['ret_albedo'].values
-            season_vals = bin_df['season'].values
-
-            k_msk, _, _ = calc_global_slope_from_raw(
-                msk_cot, msk_albedo, season_vals, x2,
-                cot_std=0.10, albedo_std=0.13, n_mc=1000
-            )
-            k_ret, _, _ = calc_global_slope_from_raw(
-                ret_cot, ret_albedo, season_vals, x2,
-                cot_std=0.10, albedo_std=0.10, n_mc=1000
-            )
-
-            unr_fra_res.append({
-                'Ocean': ocean,
-                'Bin': idx,
-                'Slope_Diff': k_ret - k_msk
-            })
-
-        all_results.append({
-            'ocean': ocean,
-            'cot_disp': cot_disp_res,
-            'unr_fra': unr_fra_res
-        })
-
-    return all_results
+    return records
 
 
-def plot_combined_4panels(icon_style='nature'):
-    if icon_style not in ('nature', 'science'):
-        raise ValueError("icon_style must be 'nature' or 'science'.")
+def draw_two_boxplot(ax, data, labels, ylabel):
+    bp = ax.boxplot(
+        data,
+        labels=labels,
+        patch_artist=True,
+        widths=0.4,
+        showfliers=False
+    )
 
-    slope_results = process_all_oceans(n_bins=2)
+    for box, color in zip(bp['boxes'], BOX_COLORS):
+        box.set_facecolor('none')
+        box.set_edgecolor(color)
+        box.set_linewidth(2)
 
-    cot_disp_list, unr_fra_list = [], []
-    for res in slope_results:
-        cot_disp_list.extend(res['cot_disp'])
-        unr_fra_list.extend(res['unr_fra'])
+    for median, color in zip(bp['medians'], BOX_COLORS):
+        median.set_color(color)
+        median.set_linewidth(2)
 
-    df_cot = pd.DataFrame(cot_disp_list)
-    df_unr = pd.DataFrame(unr_fra_list)
+    for i, whisker in enumerate(bp['whiskers']):
+        whisker.set_color(BOX_COLORS[i // 2])
+        whisker.set_linewidth(1.5)
 
-    fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(18, 4), dpi=300)
-    bar_width = 0.35
-    x_ocean = np.arange(len(oceans))
-    COLORS_SLOPE = {'low': 'steelblue', 'high': 'coral'}
+    for i, cap in enumerate(bp['caps']):
+        cap.set_color(BOX_COLORS[i // 2])
+        cap.set_linewidth(1.5)
+
+    rng = np.random.default_rng(42)
+    for i, y in enumerate(data, start=1):
+        y = np.asarray(y, dtype=float)
+        jitter = rng.uniform(-0.08, 0.08, size=len(y))
+        ax.scatter(
+            np.full(len(y), i) + jitter,
+            y,
+            color='k',
+            alpha=0.3,
+            s=20,
+            zorder=5
+        )
+
+    ax.set_ylabel(ylabel, fontsize=13)
+    ax.tick_params(axis='both', labelsize=12)
+    ax.axhline(1.0, color='gray', linestyle='--', alpha=0.5)
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+
+
+def plot_combined_4panels_v2(icon_style='nature'):
+    season_records = process_all_oceans_by_season(n_bins=2)
+
+    cot_disp_ratios = [r['cot_disp_ratio'] for r in season_records if np.isfinite(r['cot_disp_ratio'])]
+    aod_cot_ratios = [r['aod_cot_ratio'] for r in season_records if np.isfinite(r['aod_cot_ratio'])]
+    unr_fra_ratios = [r['unr_fra_ratio'] for r in season_records if np.isfinite(r['unr_fra_ratio'])]
+    aod_unr_ratios = [r['aod_unr_ratio'] for r in season_records if np.isfinite(r['aod_unr_ratio'])]
+
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6), dpi=300)
+
     x_raw = cot_range
     sza_target = 54.5
 
-    albedo_sbdart = cot_to_albedo(x_raw, method='sbdart', sza=sza_target, table_folder='dcp')
+    # Panel a
+    # Compute k values in ln(COT) vs ln(Ac/(1-Ac)) space
+    x_fit = cot_to_x(x_raw)
+
+    alb_sbd = cot_to_albedo(x_raw, 'sbdart', sza=sza_target, table_folder='dcp')
+    y_fit = albedo_to_y(alb_sbd)
+    mask = np.isfinite(y_fit)
+    k_sbd, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
+
+    alb_mono = cot_to_albedo(x_raw, 'sbdart', sza=sza_target, table_folder='dcp_mono')
+    y_fit = albedo_to_y(alb_mono)
+    mask = np.isfinite(y_fit)
+    k_mono, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
+
+    alb_quad = cot_to_albedo(x_raw, 'quadrature', sza=sza_target)
+    y_fit = albedo_to_y(alb_quad)
+    mask = np.isfinite(y_fit)
+    k_quad, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
+
     ax1.plot(
-        cot_to_x(x_raw), albedo_to_y(albedo_sbdart),
+        x_raw, alb_sbd,
         color=LINECOLOR[1], lw=2,
-        label='Sbdart, Shortwave', alpha=1.0
+        label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
     )
-
-    albedo_sbdart_mono = cot_to_albedo(x_raw, method='sbdart', sza=sza_target, table_folder='dcp_mono')
     ax1.plot(
-        cot_to_x(x_raw), albedo_to_y(albedo_sbdart_mono),
+        x_raw, alb_mono,
         color=LINECOLOR[3], lw=2, linestyle='--',
-        label='Sbdart, Visible', alpha=1.0
+        label=rf'Sbdart, VS ($k_\mathrm{{dcp}}$={k_mono:.2f})'
     )
-
-    albedo_quad = cot_to_albedo(x_raw, method='quadrature', sza=sza_target)
     ax1.plot(
-        cot_to_x(x_raw), albedo_to_y(albedo_quad),
+        x_raw, alb_quad,
         color=LINECOLOR[0], lw=2,
-        label='Quadrature (T91)', alpha=1.0
+        label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
     )
 
-    ax1.set_xlabel('ln(COT)', fontsize=16, fontweight='medium')
-    ax1.set_ylabel(r'ln[$A_{\mathrm{c}}/(1-A_{\mathrm{c}})]$', fontsize=16, fontweight='medium')
+    ax1.set_xlabel('COT', fontsize=14, fontweight='medium')
+    ax1.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
     ax1.tick_params(axis='both', labelsize=12)
-    ax1.set_title(format_panel_tag(1, icon_style), fontsize=21, loc='left')
-    ax1.legend(loc='lower right', fontsize=11, framealpha=0.9)
+    ax1.set_title(format_panel_tag(1, icon_style), fontsize=15, loc='left')
+    ax1.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
 
+    # Panel b
+    lookup_folders = ['dcp', 'surdcp_gascp', 'gasdcp_surcp', 'dcp', 'surdcp_gascp']
     lookup_labels = [
-        'Decoupled',
-        r'With Observed $A_{\mathrm{sfc}}$',
-        'With Gas',
-        r'With Observed SZA'
+        r'Decoupled ($k_{\mathrm{dcp}}=$',
+        r'$A_{\mathrm{sfc}}$ Coupled ($k_{\mathrm{cp}}=$',
+        r'Gas Coupled ($k_{\mathrm{cp}}=$',
+        r'SZA Coupled ($k_{\mathrm{cp}}=$',
+        r'All Coupled ($k_{\mathrm{cp}}=$'
     ]
 
-    for idx, table_folder in enumerate(['dcp', 'surdcp_gascp', 'gasdcp_surcp']):
-        albedo_vals = cot_to_albedo(x_raw, method='sbdart', sza=54.4, table_folder=table_folder)
+    for idx, folder in enumerate(lookup_folders[:3]):
+        alb_vals = cot_to_albedo(x_raw, 'sbdart', sza=54.4, table_folder=folder)
+        y_fit = albedo_to_y(alb_vals)
+        mask = np.isfinite(y_fit)
+        k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
         ax2.plot(
-            cot_to_x(x_raw), albedo_to_y(albedo_vals),
-            color=LINECOLOR[idx], lw=2, linestyle=LINESTYLE[idx],
-            label=lookup_labels[idx]
+            x_raw, alb_vals,
+            color=LINECOLOR[idx],
+            lw=2,
+            linestyle=LINESTYLE[idx],
+            label=f'{lookup_labels[idx]}{k_val:.2f})'
         )
 
-    all_sza_values = []
+    all_sza = []
     for ocean in oceans:
-        file_path = f"{BASE_PATH}/processed_data/merged_msk_and_ret_csv/{ocean}.csv"
-        cols = ['sza', 'cf_ceres', 'cot_mod08', 'ret_cot_cer', 'ret_albedo',
-                'sw_all', 'sw_clr', 'solar_incoming', 'cf_ret_liq_mod08', 'clr_fra']
-        df = pd.read_csv(file_path, usecols=cols)
-        mask = (
-            (df['cf_ceres'] > 0.3) &
-            (df['cot_mod08'] > 3) &
-            (df['ret_cot_cer'] > 3) &
-            (df['ret_albedo'].between(0, 1))
+        for season_name in season_dict:
+            path = f'{BASE_PATH}/processed_data/merged_data/{ocean}_{season_name}.csv'
+            if os.path.exists(path):
+                all_sza.extend(pd.read_csv(path)['sza'].dropna().values)
+
+    mean_sza = np.mean(all_sza)
+    for idx in [3, 4]:
+        folder = lookup_folders[idx]
+        alb_vals = cot_to_albedo(x_raw, 'sbdart', sza=mean_sza, table_folder=folder)
+        y_fit = albedo_to_y(alb_vals)
+        mask = np.isfinite(y_fit)
+        k_val, _ = np.polyfit(x_fit[mask], y_fit[mask], 1)
+        ax2.plot(
+            x_raw, alb_vals,
+            color=LINECOLOR[idx],
+            lw=2,
+            linestyle=LINESTYLE[idx],
+            label=f'{lookup_labels[idx]}{k_val:.2f})'
         )
-        all_sza_values.extend(df[mask]['sza'].dropna().values)
 
-    mean_sza = np.mean(all_sza_values)
-    albedo_mean_sza = cot_to_albedo(x_raw, method='sbdart', sza=mean_sza, table_folder='dcp')
-
-    ax2.plot(
-        cot_to_x(x_raw), albedo_to_y(albedo_mean_sza),
-        color=LINECOLOR[3], lw=2, linestyle=LINESTYLE[3],
-        label=lookup_labels[3]
-    )
-
-    ax2.set_xlabel('ln(COT)', fontsize=16, fontweight='medium')
-    ax2.set_ylabel(r'ln[$A_{\mathrm{c}}/(1-A_{\mathrm{c}})]$', fontsize=16, fontweight='medium')
+    ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
+    ax2.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
     ax2.tick_params(axis='both', labelsize=12)
-    ax2.set_title(format_panel_tag(2, icon_style), fontsize=21, loc='left')
-    ax2.legend(loc='lower right', fontsize=11, framealpha=0.5)
+    ax2.set_title(format_panel_tag(2, icon_style), fontsize=15, loc='left')
+    ax2.legend(loc='lower right', fontsize=9.5, framealpha=0.5)
 
-    cot_disp_low_values = []
-    cot_disp_high_values = []
-    for ocean in oceans:
-        ocean_df = df_cot[df_cot['Ocean'] == ocean].sort_values('Bin')
-        low_val = np.nan
-        high_val = np.nan
-        if len(ocean_df[ocean_df['Bin'] == 0]) > 0:
-            low_val = ocean_df[ocean_df['Bin'] == 0]['Slope_Diff'].values[0]
-        if len(ocean_df[ocean_df['Bin'] == 1]) > 0:
-            high_val = ocean_df[ocean_df['Bin'] == 1]['Slope_Diff'].values[0]
-        cot_disp_low_values.append(low_val)
-        cot_disp_high_values.append(high_val)
-
-    ax3.bar(
-        x_ocean - bar_width / 2, cot_disp_low_values, bar_width,
-        label=r'low $d_{\mathrm{COT}}$', color=COLORS_SLOPE['low'],
-        alpha=0.8, edgecolor=None
+    # Panel c
+    draw_two_boxplot(
+        ax3,
+        data=[cot_disp_ratios, aod_cot_ratios],
+        labels=[r'High $d_{\mathrm{COT}}$ / Low $d_{\mathrm{COT}}$', 'High AOD / Low AOD'],
+        ylabel=r'Ratio of $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
     )
-    ax3.bar(
-        x_ocean + bar_width / 2, cot_disp_high_values, bar_width,
-        label=r'high $d_{\mathrm{COT}}$', color=COLORS_SLOPE['high'],
-        alpha=0.8, edgecolor=None
+    ax3.set_title(format_panel_tag(3, icon_style), fontsize=15, loc='left')
+
+    # Panel d
+    draw_two_boxplot(
+        ax4,
+        data=[unr_fra_ratios, aod_unr_ratios],
+        labels=['High TZF / Low TZF', 'High AOD / Low AOD'],
+        ylabel=r'Ratio of $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
-    ax3.set_title(format_panel_tag(3, icon_style), fontsize=21, loc='left')
-    ax3.set_ylabel(r'$k_{\mathrm{cp}}-k_{\mathrm{ret}}$', fontsize=18)
-    ax3.set_ylim(0, 0.22)
-    ax3.tick_params(axis='y', labelsize=12)
-    ax3.set_xticks(x_ocean)
-    ax3.set_xticklabels(oceans, fontsize=13, ha='right', rotation=45)
-    ax3.legend(fontsize=13, loc='best')
-    ax3.grid(axis='y', linestyle='--', alpha=0.3)
+    ax4.set_title(format_panel_tag(4, icon_style), fontsize=15, loc='left')
 
-    unr_fra_low_values = []
-    unr_fra_high_values = []
-    for ocean in oceans:
-        ocean_df = df_unr[df_unr['Ocean'] == ocean].sort_values('Bin')
-        if len(ocean_df) == 0:
-            unr_fra_low_values.append(np.nan)
-            unr_fra_high_values.append(np.nan)
-            continue
-
-        low_val = np.nan
-        high_val = np.nan
-        if len(ocean_df[ocean_df['Bin'] == 0]) > 0:
-            low_val = ocean_df[ocean_df['Bin'] == 0]['Slope_Diff'].values[0]
-        if len(ocean_df[ocean_df['Bin'] == 1]) > 0:
-            high_val = ocean_df[ocean_df['Bin'] == 1]['Slope_Diff'].values[0]
-        unr_fra_low_values.append(low_val)
-        unr_fra_high_values.append(high_val)
-
-    ax4.bar(
-        x_ocean - bar_width / 2, unr_fra_low_values, bar_width,
-        label='low TZF', color=COLORS_SLOPE['low'],
-        alpha=0.8, edgecolor=None
+    plt.subplots_adjust(
+        left=0.08,
+        right=0.97,
+        top=0.95,
+        bottom=0.08,
+        wspace=0.3,
+        hspace=0.32
     )
-    ax4.bar(
-        x_ocean + bar_width / 2, unr_fra_high_values, bar_width,
-        label='high TZF', color=COLORS_SLOPE['high'],
-        alpha=0.8, edgecolor=None
-    )
-    ax4.set_title(format_panel_tag(4, icon_style), fontsize=21, loc='left')
-    ax4.set_ylabel(r'$k_{\mathrm{ret}}-k_{\mathrm{msk}}$', fontsize=18)
-    ax4.tick_params(axis='y', labelsize=12)
-    ax4.set_xticks(x_ocean)
-    ax4.set_xticklabels(oceans, fontsize=13, ha='right', rotation=45)
-    ax4.legend(fontsize=13, bbox_to_anchor=(0.18, 0.73))
-    ax4.grid(axis='y', linestyle='--', alpha=0.3)
 
-    plt.subplots_adjust(left=0.04, right=0.98, top=0.95, bottom=0.22, wspace=0.3)
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')
     plt.close(fig)
 
-    print(f"Final combined figure saved to: {os.path.abspath(FIG_SAVE_PATH)}")
+    print(f'Final combined figure saved to: {os.path.abspath(FIG_SAVE_PATH)}')
 
 
-if __name__ == "__main__":
-    # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
-    plot_combined_4panels(icon_style='nature')
+if __name__ == '__main__':
+    plot_combined_4panels_v2(icon_style='nature')
