@@ -252,7 +252,7 @@ def main():
         handletextpad=0.6
     )
 
-    ax.set_xlim(0, cot_range.max() * 1.05)
+    ax.set_xlim(0, 60)
     ax.set_ylim(0, 1)
 
     plt.tight_layout()

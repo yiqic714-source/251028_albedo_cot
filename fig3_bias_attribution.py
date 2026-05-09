@@ -92,6 +92,7 @@ def prepare_dataframe(ocean, season_name):
 
     df = pd.read_csv(file_path)
     df['season'] = season_name
+    df['ocean'] = ocean
 
     df['albedo'] = (
         (df['sw_all'] - df['sw_clr'] * (1 - df['cf_ceres'])) /
@@ -120,7 +121,13 @@ def calc_slope_diff_for_bin(bin_df, mode, x2):
     if mode == 'cot_disp':
         ret_cot = bin_df['ret_cot_cer'].values
         ret_albedo = bin_df['ret_albedo'].values
-        albedo_sbd = cot_to_albedo(ret_cot, 'sbdart', sza=bin_df['sza'].values, table_folder='cp')
+        # bin_df comes from a single ocean x season, so take the first value
+        ocean_val = bin_df['ocean'].iloc[0]
+        season_val = bin_df['season'].iloc[0]
+        albedo_sbd = cot_to_albedo(
+            ret_cot, 'sbdart', sza=bin_df['sza'].values, table_folder='cp',
+            ocean=ocean_val, season=season_val
+        )
 
         k_ret, _, _ = calc_global_slope_from_raw(
             ret_cot, ret_albedo, season_vals, x2,
@@ -354,6 +361,9 @@ def plot_4panels(icon_style='nature'):
 
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 6), dpi=300)
 
+    # Define colors matching fig2_global_5curves.py
+    colors = plt.cm.tab10(np.linspace(0, 1, 5))
+
     # Panel a
     # Load global data
     df = load_global_data()
@@ -379,9 +389,9 @@ def plot_4panels(icon_style='nature'):
 
     sorted_idx = np.argsort(df['ret_cot_cer'])
     ax1.plot(
-        df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
-        color=LINECOLOR[1], lw=2,
-        label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
+        df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
+        color=colors[0], lw=2,
+        label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
@@ -389,11 +399,11 @@ def plot_4panels(icon_style='nature'):
         label=rf'Sbdart, VS ($k_\mathrm{{dcp}}$={k_mono:.2f})'
     )
     ax1.plot(
-        df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
-        color=LINECOLOR[0], lw=2,
-        label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
+        df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
+        color=colors[1], lw=2,
+        label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
     )
-
+    ax1.set_xlim(0, 60)
     ax1.set_xlabel('COT', fontsize=14, fontweight='medium')
     ax1.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
     ax1.tick_params(axis='both', labelsize=12)
@@ -403,10 +413,10 @@ def plot_4panels(icon_style='nature'):
     # Panel b
     bin_edges = cot_range
 
-    # --- Line 1: Decoupled SBDART (dcp) with fixed sza=54.4 (unchanged) ---
+    # --- Line 1: Decoupled SBDART (dcp) with fixed sza=54.4, use colors[1] ---
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
-        color=LINECOLOR[0], lw=2,
+        color=colors[1], lw=2,
         linestyle=LINESTYLE[0],
         label=rf'Decoupled ($k_{{\mathrm{{dcp}}}}$={k_sbd:.2f})'
     )
@@ -440,7 +450,7 @@ def plot_4panels(icon_style='nature'):
 
         ax2.errorbar(
             cot_bins, alb_bins, yerr=alb_std,
-            color=LINECOLOR[idx], fmt='o-', lw=2, capsize=3, capthick=1,
+            color=LINECOLOR[idx], fmt='o-', lw=1.3, ms=2, capsize=1.3, capthick=1,
             label=f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f})'
         )
 
@@ -471,12 +481,15 @@ def plot_4panels(icon_style='nature'):
             bootstrap=True
         )
 
+        # Line 5 (idx=4) uses colors[2], others keep LINECOLOR
+        line_color = colors[2] if idx == 4 else LINECOLOR[idx]
         ax2.errorbar(
             cot_bins, alb_bins, yerr=alb_std,
-            color=LINECOLOR[idx], fmt='o-', lw=2, capsize=3, capthick=1,
+            color=line_color, fmt='o-', lw=1.3, ms=2, capsize=1.3, capthick=1,
             label=f'{lookup_labels_sza[idx_offset]}{k_val:.2f})'
         )
 
+    ax2.set_xlim(0, 60)
     ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
     ax2.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
     ax2.tick_params(axis='both', labelsize=12)
@@ -488,7 +501,7 @@ def plot_4panels(icon_style='nature'):
         ax3,
         data=[cot_disp_ratios, aod_cot_ratios],
         labels=[r'High $d_{\mathrm{COT}}$ / Low $d_{\mathrm{COT}}$', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
+        ylabel=r'Ratio of ($k_{\mathrm{cp}}-k_{\mathrm{ret}}$)'
     )
     ax3.set_title(format_panel_tag(3, icon_style), fontsize=15, loc='left')
 
@@ -497,7 +510,7 @@ def plot_4panels(icon_style='nature'):
         ax4,
         data=[unr_fra_ratios, aod_unr_ratios],
         labels=['High TZF / Low TZF', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
+        ylabel=r'Ratio of ($k_{\mathrm{ret}}-k_{\mathrm{msk}}$)'
     )
     ax4.set_title(format_panel_tag(4, icon_style), fontsize=15, loc='left')
 

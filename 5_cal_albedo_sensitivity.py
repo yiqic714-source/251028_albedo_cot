@@ -4,17 +4,28 @@ import pandas as pd
 
 from utils_fitting import (
     oceans, season_dict,
-    cot_to_albedo, mc_fit
+    cot_to_albedo, mc_fit, cot_to_x, albedo_to_y, _fit_odr_once
 )
 
 input_dir = "/home/chenyiqi/251028_albedo_cot/processed_data/merged_data/"
 MIN_COT = 2.5
 MIN_CF = 0.1
 
+# Paths for SZA correction
+WEIGHTED_FILE = '/home/chenyiqi/251028_albedo_cot/processed_data/ocean_season_sza_weighted.csv'
+HEATMAP_DATA_DIR = '/home/chenyiqi/251028_albedo_cot/build_sbdart_lookup_table/cot_sza_to_albedo_lookup_table_cp/'
 
-# ============================================================
-# Main: compute and save coefficients for each Method x Ocean x Season
-# ============================================================
+# Core parameters
+SEASONS = ['MAM', 'JJA', 'SON', 'DJF']
+SEASON_MONTHS = {
+    'MAM': [3, 4, 5],
+    'JJA': [6, 7, 8],
+    'SON': [9, 10, 11],
+    'DJF': [12, 1, 2]
+}
+LN_COT_LOW = 1.
+LN_COT_HIGH = 3.
+MIN_POINTS_FOR_FIT = 2
 
 # Method specifications
 method_specs = {
@@ -100,6 +111,7 @@ def preprocess_ocean_data():
                 'msk_cot': msk_cot,
                 'msk_albedo': msk_albedo,
                 'season': df_filtered['season'].values,
+                'sza': df_filtered['sza'].values,
                 'data_count': len(df_filtered)
             }
             all_processed_ocean_data[ocean] = ocean_processed_data
@@ -153,7 +165,186 @@ def fit_ocean_season(ocean_data, method_key, spec):
     return results
 
 
+# ============================================================
+# SZA correction functions (from 6_sza_adjust.py)
+# ============================================================
+
+def load_weighted_angles(file_path):
+    """Load weighted SZA data. Return dict: {(ocean, season): weighted_angle_deg}"""
+    df = pd.read_csv(file_path)
+    df = df[~df['season'].isin(['Global'])]
+    return {(row['ocean'], row['season']): row['weighted_angle_deg'] for _, row in df.iterrows()}
+
+
+def calculate_seasonal_stats(ocean_list, data_dir):
+    """Calculate mean SZA per ocean-season. Return dict: {(ocean, season): mean_sza}"""
+    seasonal_stats = {}
+    for ocean in ocean_list:
+        dfs = []
+        for season in SEASONS:
+            fp = os.path.join(data_dir, f'{ocean}_{season}.csv')
+            if os.path.exists(fp):
+                dfs.append(pd.read_csv(fp))
+        if not dfs:
+            for season in SEASONS:
+                seasonal_stats[(ocean, season)] = np.nan
+            continue
+        df = pd.concat(dfs, ignore_index=True)
+        df['time'] = pd.to_datetime(df['time'], format='mixed')
+        df['month'] = df['time'].dt.month
+        for season_name, months in SEASON_MONTHS.items():
+            df.loc[df['month'].isin(months), 'season'] = season_name
+        seasonal_avg = df.dropna(subset=['season']).groupby('season')['sza'].mean()
+        for season in SEASONS:
+            seasonal_stats[(ocean, season)] = seasonal_avg.loc[season] if season in seasonal_avg.index else np.nan
+    return seasonal_stats
+
+
+def compute_k_and_intercept(cot_vals, albedo_vals):
+    """Calculate slope (k) and intercept (lnb) for ln(A/(1-A)) vs ln(COT) in range [1.5, 3.0]."""
+    mask = ((cot_vals > 0.0) & np.isfinite(cot_vals) & np.isfinite(albedo_vals) &
+            (albedo_vals > 0.0) & (albedo_vals < 1.0))
+    if np.sum(mask) < MIN_POINTS_FOR_FIT:
+        return np.nan, np.nan
+    x = cot_to_x(cot_vals[mask])
+    y = albedo_to_y(albedo_vals[mask])
+    range_mask = (x >= LN_COT_LOW) & (x <= LN_COT_HIGH)
+    if np.sum(range_mask) < MIN_POINTS_FOR_FIT:
+        return np.nan, np.nan
+    try:
+        k, b = _fit_odr_once(x[range_mask], y[range_mask],
+                              np.full(np.sum(range_mask), 1e-12),
+                              np.full(np.sum(range_mask), 1e-12))
+        return float(k), float(b)
+    except Exception:
+        return np.nan, np.nan
+
+
+def get_lookup_data(ocean, season):
+    """Load lookup table and return cos(SZA), slope (k), and intercept (lnb)."""
+    file_path = os.path.join(HEATMAP_DATA_DIR, f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv')
+    df = pd.read_csv(file_path, index_col=0)
+    sza = np.array(df.index.astype(float))
+    cot = np.array(df.columns.astype(float))
+    albedo_grid = df.values.astype(float)
+    sort_sza_idx = np.argsort(sza)
+    sza_sorted = sza[sort_sza_idx]
+    cos_sza_sorted = np.cos(np.radians(sza_sorted))
+    albedo_sorted = albedo_grid[sort_sza_idx, :]
+    slope_list, intercept_list = [], []
+    for i in range(len(sza_sorted)):
+        slope, intercept = compute_k_and_intercept(cot, albedo_sorted[i, :])
+        slope_list.append(slope)
+        intercept_list.append(intercept)
+    return cos_sza_sorted, np.array(slope_list), np.array(intercept_list)
+
+
+def get_value_at_sza(cos_sza_vals, target_cos_sza, value_array):
+    """Get the closest value from value_array at target cos(SZA)."""
+    if cos_sza_vals is None or value_array is None:
+        return np.nan
+    valid_mask = np.isfinite(cos_sza_vals) & np.isfinite(value_array)
+    if not np.any(valid_mask):
+        return np.nan
+    cos_sza_valid = cos_sza_vals[valid_mask]
+    value_valid = value_array[valid_mask]
+    closest_idx = np.argmin(np.abs(cos_sza_valid - target_cos_sza))
+    return value_valid[closest_idx]
+
+
+def compute_sza_correction_and_albedo_ratio(seasonal_stats, weight_dict, all_processed_ocean_data):
+    """
+    Compute the SZA correction (daytime-mean minus 10:30) for k and lnb
+    from the SBDART lookup table.
+    Also computes the albedo ratio (daytime / 10:30) using all data points
+    via the cp lookup table, with mean and std per ocean x season.
+    
+    Returns:
+        diff_k, diff_b: DataFrames (index=Ocean, columns=Season) with SZA corrections
+        albedo_ratio_mean, albedo_ratio_std: DataFrames with mean and std of albedo ratio
+    """
+    diff_k_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+    diff_b_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+    albedo_ratio_mean = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+    albedo_ratio_std = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+
+    for ocean in oceans:
+        od = all_processed_ocean_data[ocean]
+        if od is None:
+            continue
+
+        ret_cot = od['ret_cot']
+        season_arr = od['season']
+        sza_arr = od['sza']
+
+        for season in SEASONS:
+            mean_sza_deg = seasonal_stats[(ocean, season)]
+            weighted_sza_deg = weight_dict.get((ocean, season), np.nan)
+            cos_sza, slope_vals, intercept_vals = get_lookup_data(ocean, season)
+
+            if not np.isnan(mean_sza_deg) and not np.isnan(weighted_sza_deg):
+                cos_mean_sza = np.cos(np.radians(mean_sza_deg))
+                cos_weighted_sza = np.cos(np.radians(weighted_sza_deg))
+                k_mean = get_value_at_sza(cos_sza, cos_mean_sza, slope_vals)
+                k_weighted = get_value_at_sza(cos_sza, cos_weighted_sza, slope_vals)
+                b_mean = get_value_at_sza(cos_sza, cos_mean_sza, intercept_vals)
+                b_weighted = get_value_at_sza(cos_sza, cos_weighted_sza, intercept_vals)
+                if np.isfinite(k_weighted) and np.isfinite(k_mean):
+                    diff_k_data.loc[ocean, season] = k_weighted - k_mean
+                if np.isfinite(b_weighted) and np.isfinite(b_mean):
+                    diff_b_data.loc[ocean, season] = b_weighted - b_mean
+
+            # Compute albedo ratio using all data points in this ocean x season
+            mask = (season_arr == season)
+            cot_vals = ret_cot[mask]
+            sza_vals = sza_arr[mask]
+            valid_mask = (
+                np.isfinite(cot_vals) & (cot_vals > 0) &
+                np.isfinite(sza_vals) & (sza_vals > 0)
+            )
+            cot_vals = cot_vals[valid_mask]
+            sza_vals = sza_vals[valid_mask]
+
+            if len(cot_vals) < 5 or np.isnan(weighted_sza_deg):
+                albedo_ratio_mean.loc[ocean, season] = np.nan
+                albedo_ratio_std.loc[ocean, season] = np.nan
+                continue
+
+            # Compute cp albedo at 10:30 SZA (actual SZA from data)
+            albedo_cp_1030 = cot_to_albedo(
+                cot_vals, 'sbdart',
+                sza=sza_vals,
+                table_folder='cp',
+                ocean=ocean, season=season
+            )
+
+            # Compute cp albedo at daytime-mean SZA
+            albedo_cp_daytime = cot_to_albedo(
+                cot_vals, 'sbdart',
+                sza=weighted_sza_deg,
+                table_folder='cp',
+                ocean=ocean, season=season
+            )
+
+            # Compute ratio per data point
+            valid_ratio = (
+                np.isfinite(albedo_cp_1030) & (albedo_cp_1030 > 0) &
+                np.isfinite(albedo_cp_daytime)
+            )
+            if np.sum(valid_ratio) < 5:
+                albedo_ratio_mean.loc[ocean, season] = np.nan
+                albedo_ratio_std.loc[ocean, season] = np.nan
+                continue
+
+            ratios = albedo_cp_daytime[valid_ratio] / albedo_cp_1030[valid_ratio]
+            albedo_ratio_mean.loc[ocean, season] = np.mean(ratios)
+            albedo_ratio_std.loc[ocean, season] = np.std(ratios)
+
+    return diff_k_data, diff_b_data, albedo_ratio_mean, albedo_ratio_std
+
+
 def main():
+    # Step 1: Preprocess data and compute 10:30 coefficients (from 5_cal_albedo_sensitivity.py)
     all_processed_ocean_data = preprocess_ocean_data()
 
     # Compute fits for each Method x Ocean x Season
@@ -189,18 +380,69 @@ def main():
                     'Intercept_Unc': b_unc,
                 })
 
+    coef_df = pd.DataFrame(fit_records)
+
+    # Step 2: Compute SZA correction and albedo ratio
+    print("\nComputing SZA correction for daytime-mean coefficients...")
+    seasonal_stats = calculate_seasonal_stats(oceans, input_dir)
+    weight_dict = load_weighted_angles(WEIGHTED_FILE)
+    diff_k, diff_b, albedo_ratio_mean, albedo_ratio_std = \
+        compute_sza_correction_and_albedo_ratio(seasonal_stats, weight_dict, all_processed_ocean_data)
+
+    # Step 3: Build output CSV with both 10:30 and daytime-mean coefficients
+    output_records = []
+    for method in ['ret', 'msk']:
+        mdf = coef_df[coef_df['Method'] == method]
+        for _, row in mdf.iterrows():
+            ocean = row['Ocean']
+            season = row['Season']
+            k_1030 = row['Slope']
+            b_1030 = row['Intercept']
+            k_1030_unc = row['Slope_Unc']
+            b_1030_unc = row['Intercept_Unc']
+
+            # Apply SZA correction to get daytime-mean
+            dk = diff_k.loc[ocean, season] if np.isfinite(diff_k.loc[ocean, season]) else 0
+            db = diff_b.loc[ocean, season] if np.isfinite(diff_b.loc[ocean, season]) else 0
+
+            k_daytime = k_1030 + dk if np.isfinite(k_1030) else np.nan
+            b_daytime = b_1030 + db if np.isfinite(b_1030) else np.nan
+
+            # Uncertainty propagation: unc_daytime = unc_1030 (since dk/db are from lookup table without uncertainty)
+            k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
+            b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
+
+            # Albedo ratio (daytime / 10:30) from cp lookup table using all data
+            alb_ratio_mean_val = albedo_ratio_mean.loc[ocean, season] if np.isfinite(albedo_ratio_mean.loc[ocean, season]) else np.nan
+            alb_ratio_std_val = albedo_ratio_std.loc[ocean, season] if np.isfinite(albedo_ratio_std.loc[ocean, season]) else np.nan
+
+            output_records.append({
+                'Method': method,
+                'Ocean': ocean,
+                'Season': season,
+                'Slope_1030': k_1030,
+                'Intercept_1030': b_1030,
+                'Slope_1030_Unc': k_1030_unc,
+                'Intercept_1030_Unc': b_1030_unc,
+                'Slope_Daytime': k_daytime,
+                'Intercept_Daytime': b_daytime,
+                'Slope_Daytime_Unc': k_daytime_unc,
+                'Intercept_Daytime_Unc': b_daytime_unc,
+                'Albedo_Ratio_Daytime_o_1030': alb_ratio_mean_val,
+                'Albedo_Ratio_Unc': alb_ratio_std_val,
+            })
+
+    output_df = pd.DataFrame(output_records).round(4)
+
     # Save to CSV
     output_dir = '/home/chenyiqi/251028_albedo_cot/processed_data'
     os.makedirs(output_dir, exist_ok=True)
-    output_csv_path = os.path.join(output_dir, 'coef_k_b.csv')
-
-    output_df = pd.DataFrame(fit_records)
+    output_csv_path = os.path.join(output_dir, 'sensitivity_albedo.csv')
     output_df.to_csv(output_csv_path, index=False)
-    print(f"\nCoefficients saved to: {output_csv_path}")
+    print(f"\nMerged coefficients saved to: {output_csv_path}")
     print(f"Total records: {len(output_df)}")
-    print(f"\nSummary of non-NaN fits:")
-    summary = output_df.dropna(subset=['Slope']).groupby(['Method', 'Ocean']).size().unstack(fill_value=0)
-    print(summary)
+    print(f"\nColumns: {list(output_df.columns)}")
+    print(output_df.to_string(index=False))
 
 
 if __name__ == "__main__":
