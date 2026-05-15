@@ -252,21 +252,16 @@ def get_value_at_sza(cos_sza_vals, target_cos_sza, value_array):
     return value_valid[closest_idx]
 
 
-def compute_sza_correction_and_albedo_ratio(seasonal_stats, weight_dict, all_processed_ocean_data):
+def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data):
     """
     Compute the SZA correction (daytime-mean minus 10:30) for k and lnb
     from the SBDART lookup table.
-    Also computes the albedo ratio (daytime / 10:30) using all data points
-    via the cp lookup table, with mean and std per ocean x season.
     
     Returns:
         diff_k, diff_b: DataFrames (index=Ocean, columns=Season) with SZA corrections
-        albedo_ratio_mean, albedo_ratio_std: DataFrames with mean and std of albedo ratio
     """
     diff_k_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
     diff_b_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
-    albedo_ratio_mean = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
-    albedo_ratio_std = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
 
     for ocean in oceans:
         od = all_processed_ocean_data[ocean]
@@ -294,53 +289,7 @@ def compute_sza_correction_and_albedo_ratio(seasonal_stats, weight_dict, all_pro
                 if np.isfinite(b_weighted) and np.isfinite(b_mean):
                     diff_b_data.loc[ocean, season] = b_weighted - b_mean
 
-            # Compute albedo ratio using all data points in this ocean x season
-            mask = (season_arr == season)
-            cot_vals = ret_cot[mask]
-            sza_vals = sza_arr[mask]
-            valid_mask = (
-                np.isfinite(cot_vals) & (cot_vals > 0) &
-                np.isfinite(sza_vals) & (sza_vals > 0)
-            )
-            cot_vals = cot_vals[valid_mask]
-            sza_vals = sza_vals[valid_mask]
-
-            if len(cot_vals) < 5 or np.isnan(weighted_sza_deg):
-                albedo_ratio_mean.loc[ocean, season] = np.nan
-                albedo_ratio_std.loc[ocean, season] = np.nan
-                continue
-
-            # Compute cp albedo at 10:30 SZA (actual SZA from data)
-            albedo_cp_1030 = cot_to_albedo(
-                cot_vals, 'sbdart',
-                sza=sza_vals,
-                table_folder='cp',
-                ocean=ocean, season=season
-            )
-
-            # Compute cp albedo at daytime-mean SZA
-            albedo_cp_daytime = cot_to_albedo(
-                cot_vals, 'sbdart',
-                sza=weighted_sza_deg,
-                table_folder='cp',
-                ocean=ocean, season=season
-            )
-
-            # Compute ratio per data point
-            valid_ratio = (
-                np.isfinite(albedo_cp_1030) & (albedo_cp_1030 > 0) &
-                np.isfinite(albedo_cp_daytime)
-            )
-            if np.sum(valid_ratio) < 5:
-                albedo_ratio_mean.loc[ocean, season] = np.nan
-                albedo_ratio_std.loc[ocean, season] = np.nan
-                continue
-
-            ratios = albedo_cp_daytime[valid_ratio] / albedo_cp_1030[valid_ratio]
-            albedo_ratio_mean.loc[ocean, season] = np.mean(ratios)
-            albedo_ratio_std.loc[ocean, season] = np.std(ratios)
-
-    return diff_k_data, diff_b_data, albedo_ratio_mean, albedo_ratio_std
+    return diff_k_data, diff_b_data
 
 
 def main():
@@ -382,12 +331,12 @@ def main():
 
     coef_df = pd.DataFrame(fit_records)
 
-    # Step 2: Compute SZA correction and albedo ratio
+    # Step 2: Compute SZA correction for daytime-mean coefficients
     print("\nComputing SZA correction for daytime-mean coefficients...")
     seasonal_stats = calculate_seasonal_stats(oceans, input_dir)
     weight_dict = load_weighted_angles(WEIGHTED_FILE)
-    diff_k, diff_b, albedo_ratio_mean, albedo_ratio_std = \
-        compute_sza_correction_and_albedo_ratio(seasonal_stats, weight_dict, all_processed_ocean_data)
+    diff_k, diff_b = \
+        compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data)
 
     # Step 3: Build output CSV with both 10:30 and daytime-mean coefficients
     output_records = []
@@ -412,10 +361,6 @@ def main():
             k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
             b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
 
-            # Albedo ratio (daytime / 10:30) from cp lookup table using all data
-            alb_ratio_mean_val = albedo_ratio_mean.loc[ocean, season] if np.isfinite(albedo_ratio_mean.loc[ocean, season]) else np.nan
-            alb_ratio_std_val = albedo_ratio_std.loc[ocean, season] if np.isfinite(albedo_ratio_std.loc[ocean, season]) else np.nan
-
             output_records.append({
                 'Method': method,
                 'Ocean': ocean,
@@ -428,8 +373,6 @@ def main():
                 'Intercept_Daytime': b_daytime,
                 'Slope_Daytime_Unc': k_daytime_unc,
                 'Intercept_Daytime_Unc': b_daytime_unc,
-                'Albedo_Ratio_Daytime_o_1030': alb_ratio_mean_val,
-                'Albedo_Ratio_Unc': alb_ratio_std_val,
             })
 
     output_df = pd.DataFrame(output_records).round(4)
@@ -437,7 +380,7 @@ def main():
     # Save to CSV
     output_dir = '/home/chenyiqi/251028_albedo_cot/processed_data'
     os.makedirs(output_dir, exist_ok=True)
-    output_csv_path = os.path.join(output_dir, 'sensitivity_albedo.csv')
+    output_csv_path = os.path.join(output_dir, 'sensitivity_albedo_vs_cot.csv')
     output_df.to_csv(output_csv_path, index=False)
     print(f"\nMerged coefficients saved to: {output_csv_path}")
     print(f"Total records: {len(output_df)}")

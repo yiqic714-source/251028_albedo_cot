@@ -15,19 +15,21 @@ COEF_CSV = os.path.join(BASE_PATH, 'processed_data', 'sensitivity_albedo_vs_cot.
 FIG_SAVE_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_plt_corr_coef.png')
 os.makedirs(os.path.dirname(FIG_SAVE_PATH), exist_ok=True)
 
+# Switch to control whether to plot global distributions (3x2 map)
+PLOT_GLOBAL_DIST = False
+
 OCEANS = oceans  # 8 ocean regions
 SEASONS = ['MAM', 'JJA', 'SON', 'DJF']
 
 HEATMAP_CMAP = plt.cm.GnBu
 B_CMAP = plt.cm.pink_r
-M_CMAP = plt.cm.YlOrRd
 
 SIZE_PARAMS = {
-    'small_tick': 8,
-    'title': 14,
-    'cbar_tick': 10,
+    'small_tick': 9.5,
+    'title': 16,
+    'cbar_tick': 9.5,
     'cbar_label': 12,
-    'legend': 10,
+    'legend': 13,
     'text_label': 22,
 }
 
@@ -37,7 +39,7 @@ R_EARTH = 6371000  # Earth radius (meters)
 M2_TO_KM2 = 1e6
 
 # =========================
-# Solar geometry helpers (from fig4_s3_IRF_data_used.py)
+# Solar geometry helpers
 # =========================
 
 def declination(n):
@@ -169,8 +171,7 @@ def calc_irf_ratios():
     
     Workflow:
       1. Load merged data (daily grid-cell data)
-      2. Compute Ac_msk_origin from radiation fluxes:
-         Ac_msk = (sw_all - sw_clr * (1 - cf_ceres)) / cf_ceres / solar_incoming
+      2. Compute SWdown for each grid cell
       3. Aggregate to seasonal means at each lat/lon grid point
       4. Compute IRF using seasonal means + coefficients
     
@@ -190,24 +191,6 @@ def calc_irf_ratios():
     # Load lnnd_o_lnaod
     lnnd_df = load_lnnd_o_lnaod()
     
-    # ---- Step 1: Compute Ac_msk_origin from radiation fluxes ----
-    # Ac_msk = (sw_all - sw_clr * (1 - cf_ceres)) / cf_ceres / solar_incoming
-    with np.errstate(invalid='ignore', divide='ignore'):
-        merged_df['Ac_msk_origin'] = (
-            (merged_df['sw_all'] - merged_df['sw_clr'] * (1 - merged_df['cf_ceres']))
-            / merged_df['cf_ceres']
-            / merged_df['solar_incoming']
-        )
-    
-    # Apply filter for Ac_msk
-    msk_filter = (
-        # (merged_df['cf_liq_ceres'] / merged_df['cf_ceres'] > 0.99)
-        # & 
-        (merged_df['Ac_msk_origin'] >= 0)
-        & (merged_df['Ac_msk_origin'] <= 1)
-    )
-    merged_df.loc[~msk_filter, 'Ac_msk_origin'] = np.nan
-    
     # ---- Step 2: Compute SWdown for each grid cell ----
     merged_df['month'] = pd.to_datetime(merged_df['time']).dt.month
     unique_lat_month = merged_df[['lat', 'month']].drop_duplicates()
@@ -220,12 +203,11 @@ def calc_irf_ratios():
     merged_df['grid_area_km2'] = merged_df['lat'].apply(calc_grid_cell_area)
     
     # ---- Step 3: Aggregate to seasonal means at each lat/lon ----
-    # Variables to aggregate: swdown, log_aod_diff, Ac_msk_origin, cf_liq_ceres (CF_msk),
+    # Variables to aggregate: swdown, log_aod_diff, cf_liq_ceres (CF_msk),
     #   cf_ret_liq_mod08 (CF_ret), cot_mod08, grid_area_km2
     agg_cols = {
         'swdown': 'mean',
         'log_aod_diff': 'mean',
-        'Ac_msk_origin': 'mean',
         'cf_liq_ceres': 'mean',       # CF_msk
         'cf_ret_liq_mod08': 'mean',   # CF_ret
         'cot_mod08': 'mean',
@@ -252,8 +234,6 @@ def calc_irf_ratios():
         coef_lookup[(key, 'k_day_unc')] = row['Slope_Daytime_Unc']
         coef_lookup[(key, 'lnb_1030_unc')] = row['Intercept_1030_Unc']
         coef_lookup[(key, 'lnb_day_unc')] = row['Intercept_Daytime_Unc']
-        coef_lookup[(key, 'm_day')] = row['Albedo_Ratio_Daytime_o_1030']
-        coef_lookup[(key, 'm_day_unc')] = row['Albedo_Ratio_Unc']
     
     def get_coef(method, ocean, season, var):
         return coef_lookup.get(((method, ocean, season), var), np.nan)
@@ -265,14 +245,13 @@ def calc_irf_ratios():
     # Original IRF
     # ret: Ac_ret_orig = 0.13 * cot / (1 + 0.13 * cot)
     cot = seasonal_grid['cot_mod08'].values
-    Ac_ret_orig = 0.13 * cot / (1 + 0.13 * cot)
+    Ac_orig = 0.13 * cot / (1 + 0.13 * cot)
     cf_ret = seasonal_grid['cf_ret_liq_mod08'].values
-    irf_ret_orig = irf_base.values * cf_ret * Ac_ret_orig * (1 - Ac_ret_orig)
+    irf_ret_orig = irf_base.values * cf_ret * Ac_orig * (1 - Ac_orig)
     
-    # msk: Ac_msk from radiation flux calculation
-    Ac_msk = seasonal_grid['Ac_msk_origin'].values
+    # msk: Ac_msk from MODIS retrieval (same formula as ret)
     cf_msk = seasonal_grid['cf_liq_ceres'].values
-    irf_msk_orig = irf_base.values * cf_msk * Ac_msk * (1 - Ac_msk)
+    irf_msk_orig = irf_base.values * cf_msk * Ac_orig * (1 - Ac_orig)
     
     results = {
         'ret_1030_ratio': {}, 'ret_daytime_ratio': {},
@@ -315,13 +294,17 @@ def calc_irf_ratios():
             
             k_msk_1030 = get_coef('msk', ocean, season, 'k_1030')
             k_msk_day = get_coef('msk', ocean, season, 'k_day')
-            m_msk_1030 = 1.0  # m=1 for 10:30
-            m_msk_day = get_coef('msk', ocean, season, 'm_day')
+            lnb_msk_1030 = get_coef('msk', ocean, season, 'lnb_1030')
+            lnb_msk_day = get_coef('msk', ocean, season, 'lnb_day')
+            b_msk_1030 = np.exp(lnb_msk_1030) if not np.isnan(lnb_msk_1030) else np.nan
+            b_msk_day = np.exp(lnb_msk_day) if not np.isnan(lnb_msk_day) else np.nan
             
             k_msk_1030_unc = get_coef('msk', ocean, season, 'k_1030_unc')
             k_msk_day_unc = get_coef('msk', ocean, season, 'k_day_unc')
-            m_msk_day_unc = get_coef('msk', ocean, season, 'm_day_unc')
-            m_msk_1030_unc = 0.0
+            lnb_msk_1030_unc = get_coef('msk', ocean, season, 'lnb_1030_unc')
+            lnb_msk_day_unc = get_coef('msk', ocean, season, 'lnb_day_unc')
+            b_msk_1030_unc = b_msk_1030 * lnb_msk_1030_unc if not np.isnan(b_msk_1030) else np.nan
+            b_msk_day_unc = b_msk_day * lnb_msk_day_unc if not np.isnan(b_msk_day) else np.nan
             
             # Per-grid-cell IRF ratios
             cot_sub = sub['cot_mod08'].values
@@ -329,7 +312,7 @@ def calc_irf_ratios():
             # ret 1030
             if not np.isnan(k_ret_1030) and not np.isnan(b_ret_1030):
                 Ac_corr_1030 = b_ret_1030 * cot_sub ** k_ret_1030 / (1 + b_ret_1030 * cot_sub ** k_ret_1030)
-                ratio_1030 = k_ret_1030 * Ac_corr_1030 * (1 - Ac_corr_1030) / (Ac_ret_orig[mask.values] * (1 - Ac_ret_orig[mask.values]))
+                ratio_1030 = k_ret_1030 * Ac_corr_1030 * (1 - Ac_corr_1030) / (Ac_orig[mask.values] * (1 - Ac_orig[mask.values]))
                 irf_ret_1030 = np.nansum(irf_ret_orig[mask.values] * ratio_1030 * area) / total_area
                 ratio_mean = irf_ret_1030 / irf_ret_o if irf_ret_o != 0 else np.nan
             else:
@@ -338,25 +321,25 @@ def calc_irf_ratios():
             # ret Daytime
             if not np.isnan(k_ret_day) and not np.isnan(b_ret_day):
                 Ac_corr_day = b_ret_day * cot_sub ** k_ret_day / (1 + b_ret_day * cot_sub ** k_ret_day)
-                ratio_day = k_ret_day * Ac_corr_day * (1 - Ac_corr_day) / (Ac_ret_orig[mask.values] * (1 - Ac_ret_orig[mask.values]))
+                ratio_day = k_ret_day * Ac_corr_day * (1 - Ac_corr_day) / (Ac_orig[mask.values] * (1 - Ac_orig[mask.values]))
                 irf_ret_day = np.nansum(irf_ret_orig[mask.values] * ratio_day * area) / total_area
                 ratio_mean_day = irf_ret_day / irf_ret_o if irf_ret_o != 0 else np.nan
             else:
                 ratio_mean_day = np.nan
             
-            # msk 1030
-            if not np.isnan(k_msk_1030):
-                Ac_corr_msk_1030 = m_msk_1030 * Ac_msk[mask.values]
-                ratio_msk_1030 = k_msk_1030 * Ac_corr_msk_1030 * (1 - Ac_corr_msk_1030) / (Ac_msk[mask.values] * (1 - Ac_msk[mask.values]))
+            # msk 1030: Ac_corr = l * cot^k / (1 + l * cot^k), same form as ret
+            if not np.isnan(k_msk_1030) and not np.isnan(b_msk_1030):
+                Ac_corr_msk_1030 = b_msk_1030 * cot_sub ** k_msk_1030 / (1 + b_msk_1030 * cot_sub ** k_msk_1030)
+                ratio_msk_1030 = k_msk_1030 * Ac_corr_msk_1030 * (1 - Ac_corr_msk_1030) / (Ac_orig[mask.values] * (1 - Ac_orig[mask.values]))
                 irf_msk_1030 = np.nansum(irf_msk_orig[mask.values] * ratio_msk_1030 * area) / total_area
                 ratio_mean_msk_1030 = irf_msk_1030 / irf_msk_o if irf_msk_o != 0 else np.nan
             else:
                 ratio_mean_msk_1030 = np.nan
             
             # msk Daytime
-            if not np.isnan(k_msk_day) and not np.isnan(m_msk_day):
-                Ac_corr_msk_day = m_msk_day * Ac_msk[mask.values]
-                ratio_msk_day = k_msk_day * Ac_corr_msk_day * (1 - Ac_corr_msk_day) / (Ac_msk[mask.values] * (1 - Ac_msk[mask.values]))
+            if not np.isnan(k_msk_day) and not np.isnan(b_msk_day):
+                Ac_corr_msk_day = b_msk_day * cot_sub ** k_msk_day / (1 + b_msk_day * cot_sub ** k_msk_day)
+                ratio_msk_day = k_msk_day * Ac_corr_msk_day * (1 - Ac_corr_msk_day) / (Ac_orig[mask.values] * (1 - Ac_orig[mask.values]))
                 irf_msk_day = np.nansum(irf_msk_orig[mask.values] * ratio_msk_day * area) / total_area
                 ratio_mean_msk_day = irf_msk_day / irf_msk_o if irf_msk_o != 0 else np.nan
             else:
@@ -379,11 +362,11 @@ def calc_irf_ratios():
                 ac_ret_day_mean = np.nansum(Ac_corr_day * area) / total_area
             else:
                 ac_ret_day_mean = np.nan
-            if not np.isnan(k_msk_1030):
+            if not np.isnan(k_msk_1030) and not np.isnan(b_msk_1030):
                 ac_msk_1030_mean = np.nansum(Ac_corr_msk_1030 * area) / total_area
             else:
                 ac_msk_1030_mean = np.nan
-            if not np.isnan(k_msk_day) and not np.isnan(m_msk_day):
+            if not np.isnan(k_msk_day) and not np.isnan(b_msk_day):
                 ac_msk_day_mean = np.nansum(Ac_corr_msk_day * area) / total_area
             else:
                 ac_msk_day_mean = np.nan
@@ -438,7 +421,6 @@ def plot_global_distributions(df, fig_save_path, icon_style='nature'):
     agg_cols = {
         'swdown': 'mean',
         'log_aod_diff': 'mean',
-        'Ac_msk_origin': 'mean',
         'cf_liq_ceres': 'mean',
         'cf_ret_liq_mod08': 'mean',
         'cot_mod08': 'mean',
@@ -457,26 +439,27 @@ def plot_global_distributions(df, fig_save_path, icon_style='nature'):
     
     area_grid = make_grid('grid_area_km2')
     
-    # Define plot configurations
+    # Define plot configurations (5 subplots: 3 rows x 2 cols, last one empty)
     grid_configs = [
         (make_grid('swdown'), plt.cm.Blues,
          f'{format_panel_tag(0, icon_style)} SW$_{{\mathrm{{down}}}}$', 'W m$^{-2}$'),
         (make_grid('log_aod_diff'), plt.cm.Blues,
          f'{format_panel_tag(1, icon_style)} $\\ln\\text{{AOD}}_{{\mathrm{{PD}}}} - \\ln\\text{{AOD}}_{{\mathrm{{PI}}}}$', ''),
-        (make_grid('Ac_msk_origin'), plt.cm.Blues,
-         f'{format_panel_tag(2, icon_style)} $A_{{\mathrm{{c,msk}}}}$', ''),
         (make_grid('cf_liq_ceres'), plt.cm.Blues,
-         f'{format_panel_tag(3, icon_style)} CF$_{{\mathrm{{msk}}}}$', ''),
+         f'{format_panel_tag(2, icon_style)} CF$_{{\mathrm{{msk}}}}$', ''),
         (make_grid('cf_ret_liq_mod08'), plt.cm.Blues,
-         f'{format_panel_tag(4, icon_style)} CF$_{{\mathrm{{ret}}}}$', ''),
+         f'{format_panel_tag(3, icon_style)} CF$_{{\mathrm{{ret}}}}$', ''),
         (np.log(make_grid('cot_mod08')), plt.cm.Blues,
-         f'{format_panel_tag(5, icon_style)} $\\ln$COT', ''),
+         f'{format_panel_tag(4, icon_style)} $\\ln$COT', ''),
     ]
     
-    fig, axes = plt.subplots(3, 2, figsize=(13, 7.5),
+    fig, axes = plt.subplots(3, 2, figsize=(9.5, 7.5),
                              subplot_kw={'projection': ccrs.PlateCarree()})
     plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95,
                         wspace=0.17, hspace=0.25)
+    
+    # Hide the last (6th) subplot since we only have 5
+    axes.flat[-1].set_visible(False)
     
     for idx, (grid, cmap, title, cbar_label) in enumerate(grid_configs):
         ax = axes.flat[idx]
@@ -527,7 +510,8 @@ def main():
     
     # msk 1030
     msk_k_1030 = get_data_matrix(df, 'msk', '1030', 'Slope_1030')
-    msk_m_1030 = np.full_like(msk_k_1030, 1.0)  # m=1 for all
+    msk_lnb_1030 = get_data_matrix(df, 'msk', '1030', 'Intercept_1030')
+    msk_b_1030 = np.exp(msk_lnb_1030)  # convert lnb to b
     
     # ret Daytime
     ret_k_day = get_data_matrix(df, 'ret', 'Daytime', 'Slope_Daytime')
@@ -536,7 +520,8 @@ def main():
     
     # msk Daytime
     msk_k_day = get_data_matrix(df, 'msk', 'Daytime', 'Slope_Daytime')
-    msk_m_day = get_data_matrix(df, 'msk', 'Daytime', 'Albedo_Ratio_Daytime_o_1030')
+    msk_lnb_day = get_data_matrix(df, 'msk', 'Daytime', 'Intercept_Daytime')
+    msk_b_day = np.exp(msk_lnb_day)  # convert lnb to b
     
     # Determine global vmin/vmax for shared colorbars
     # k values (ret and msk share similar range)
@@ -546,17 +531,12 @@ def main():
     k_vmin = np.floor(np.min(all_k) * 10) / 10 if len(all_k) > 0 else 0
     k_vmax = np.ceil(np.max(all_k) * 10) / 10 if len(all_k) > 0 else 1
     
-    # b values (ret only, now in linear space)
-    all_b = np.concatenate([ret_b_1030.ravel(), ret_b_day.ravel()])
+    # b values (all methods, in linear space)
+    all_b = np.concatenate([ret_b_1030.ravel(), ret_b_day.ravel(),
+                            msk_b_1030.ravel(), msk_b_day.ravel()])
     all_b = all_b[np.isfinite(all_b)]
     b_vmin = np.floor(np.min(all_b) * 10) / 10 if len(all_b) > 0 else 0
     b_vmax = np.ceil(np.max(all_b) * 10) / 10 if len(all_b) > 0 else 1
-    
-    # m values (msk only)
-    all_m = np.concatenate([msk_m_1030.ravel(), msk_m_day.ravel()])
-    all_m = all_m[np.isfinite(all_m)]
-    m_vmin = np.floor(np.min(all_m) * 10) / 10 if len(all_m) > 0 else 0.8
-    m_vmax = np.ceil(np.max(all_m) * 10) / 10 if len(all_m) > 0 else 1.4
     
     # =========================
     # Calculate IRF ratios
@@ -565,180 +545,115 @@ def main():
     irf_results = calc_irf_ratios()
     
     # =========================
-    # Plot global distributions
+    # Plot global distributions (optional)
     # =========================
-    print("Plotting global distributions...")
-    merged_df = load_merged_data()
-    # Compute Ac_msk_origin (same as in calc_irf_ratios)
-    with np.errstate(invalid='ignore', divide='ignore'):
-        merged_df['Ac_msk_origin'] = (
-            (merged_df['sw_all'] - merged_df['sw_clr'] * (1 - merged_df['cf_ceres']))
-            / merged_df['cf_ceres']
-            / merged_df['solar_incoming']
+    if PLOT_GLOBAL_DIST:
+        print("Plotting global distributions...")
+        merged_df = load_merged_data()
+        # Compute SWdown
+        merged_df['month'] = pd.to_datetime(merged_df['time']).dt.month
+        unique_lat_month = merged_df[['lat', 'month']].drop_duplicates()
+        unique_lat_month['swdown'] = unique_lat_month.apply(
+            lambda r: calc_monthly_swdown(r['lat'], month=r['month']), axis=1
         )
-    msk_filter = (
-        (merged_df['cf_liq_ceres'] / merged_df['cf_ceres'] > 0.90)
-        & (merged_df['ret_albedo'] >= 0)
-        & (merged_df['ret_albedo'] <= 1)
-    )
-    merged_df.loc[~msk_filter, 'Ac_msk_origin'] = np.nan
-    # Compute SWdown
-    merged_df['month'] = pd.to_datetime(merged_df['time']).dt.month
-    unique_lat_month = merged_df[['lat', 'month']].drop_duplicates()
-    unique_lat_month['swdown'] = unique_lat_month.apply(
-        lambda r: calc_monthly_swdown(r['lat'], month=r['month']), axis=1
-    )
-    merged_df = merged_df.merge(unique_lat_month, on=['lat', 'month'], how='left')
-    merged_df['grid_area_km2'] = merged_df['lat'].apply(calc_grid_cell_area)
-    
-    GLOBAL_DIST_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_global_distributions.png')
-    plot_global_distributions(merged_df, GLOBAL_DIST_PATH, icon_style='nature')
+        merged_df = merged_df.merge(unique_lat_month, on=['lat', 'month'], how='left')
+        merged_df['grid_area_km2'] = merged_df['lat'].apply(calc_grid_cell_area)
+        
+        GLOBAL_DIST_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_global_distributions.png')
+        plot_global_distributions(merged_df, GLOBAL_DIST_PATH, icon_style='nature')
     
     # =========================
     # Create figure layout
     # =========================
-    # 2x3 grid: top row = (a)(b), middle row = (c)(d), bottom row = (e) spanning full width
-    # Each of (a)-(d) has 2 heatmaps (k + b/m)
-    # (e) is a bar+scatter plot
+    # Single subplot with 8 heatmaps in 2x4 grid:
+    #   Row 0: k_ret_1030, k_ret_day, k_msk_1030, k_msk_day
+    #   Row 1: b_ret_1030, b_ret_day, b_msk_1030, b_msk_day
+    # Two shared colorbars (k and b) below the heatmaps
+    # Bottom subplot (e): IRF ratio bar chart
     
-    fig = plt.figure(figsize=(12, 9), dpi=100)
+    fig = plt.figure(figsize=(14, 9), dpi=100)
     
-    # Layout parameters for heatmap rows
     left_margin = 0.06
     right_margin = 0.02
-    top_margin = 0.03
+    top_margin = 0.04
     bottom_margin = 0.06
-    h_space = 0.10
-    w_space = 0.14
-    inner_w_space = 0.0
     
-    # Space for colorbars below bottom heatmap row
-    cbar_height = 0.02
-    cbar_gap_from_heatmap = 0.04
+    # Heatmap area
+    n_rows, n_cols = 2, 4
+    heatmap_total_height = 0.50
+    bar_height = 1 - top_margin - bottom_margin - heatmap_total_height - 0.03
     
-    # Heatmap rows occupy top portion
-    heatmap_total_height = 0.55  # fraction of figure height for heatmaps
-    bar_height = 1 - top_margin - bottom_margin - heatmap_total_height - 0.02  # remaining for bar plot
+    # Colorbar settings
+    cbar_height = 0.018
+    cbar_gap = 0.03
     
-    # Heatmap group dimensions
-    group_width = (1 - left_margin - right_margin - w_space) / 2
-    group_height = (heatmap_total_height - h_space - cbar_height - cbar_gap_from_heatmap) / 2
+    # Individual heatmap dimensions (reserve space for vertical colorbars on right)
+    cbar_width = 0.012
+    hm_w = (1 - left_margin - right_margin - cbar_width - 0.01) / n_cols
+    hm_h = (heatmap_total_height - cbar_height - cbar_gap) / n_rows
     
-    inner_width = (group_width - inner_w_space) / 2
-    
-    def get_group_rect(row, col):
-        """Get the bounding box for a subplot group (row, col)."""
-        left = left_margin + col * (group_width + w_space)
-        if row == 0:
-            bottom = bottom_margin + bar_height + 0.02 + cbar_height + cbar_gap_from_heatmap + group_height + h_space
-        else:
-            bottom = bottom_margin + bar_height + 0.02 + cbar_height + cbar_gap_from_heatmap
-        return left, bottom, group_width, group_height
-    
-    def get_inner_rect(group_left, group_bottom, is_left):
-        if is_left:
-            return (group_left, group_bottom, inner_width, group_height)
-        else:
-            return (group_left + inner_width + inner_w_space, group_bottom, inner_width, group_height)
-    
-    def get_cbar_rect(group_left, is_left):
-        if is_left:
-            cbar_left = group_left + 0.005
-        else:
-            cbar_left = group_left + inner_width + inner_w_space + 0.005
-        return (cbar_left, bottom_margin + bar_height + 0.02, inner_width - 0.01, cbar_height)
-    
-    # =========================
-    # Plot subplots (a)-(d): heatmaps
-    # =========================
-    
-    # Subplot (a): ret 1030
-    gl_a, gb_a, gw_a, gh_a = get_group_rect(0, 0)
-    
-    ax_a_k = fig.add_axes(get_inner_rect(gl_a, gb_a, True))
-    im_a_k = plot_single_heatmap(ax_a_k, ret_k_1030, SEASONS, OCEANS,
-                                  HEATMAP_CMAP, vmin=k_vmin, vmax=k_vmax,
-                                  text_label='$k_{\\mathrm{ret}}$')
-    ax_a_k.set_title(
-        f'{format_panel_tag(0, "nature")} Retrieval-Domain Coef., 10:30',
-        fontsize=SIZE_PARAMS['title'], pad=10, loc='left', x=-0.40
-    )
-    
-    ax_a_b = fig.add_axes(get_inner_rect(gl_a, gb_a, False))
-    im_a_b = plot_single_heatmap(ax_a_b, ret_b_1030, SEASONS, OCEANS,
-                                 B_CMAP, vmin=b_vmin, vmax=b_vmax,
-                                 text_label='$l$')
-    ax_a_b.set_yticklabels([])
-    
-    # Subplot (b): msk 1030
-    gl_b, gb_b, gw_b, gh_b = get_group_rect(0, 1)
-    
-    ax_b_k = fig.add_axes(get_inner_rect(gl_b, gb_b, True))
-    im_b_k = plot_single_heatmap(ax_b_k, msk_k_1030, SEASONS, OCEANS,
-                                 HEATMAP_CMAP, vmin=k_vmin, vmax=k_vmax,
-                                 text_label='$k_{\\mathrm{msk}}$')
-    ax_b_k.set_title(
-        f'{format_panel_tag(1, "nature")} Mask-Domain Coef., 10:30',
-        fontsize=SIZE_PARAMS['title'], pad=10, loc='left', x=-0.40
-    )
-    
-    ax_b_m = fig.add_axes(get_inner_rect(gl_b, gb_b, False))
-    im_b_m = plot_single_heatmap(ax_b_m, msk_m_1030, SEASONS, OCEANS,
-                                 M_CMAP, vmin=m_vmin, vmax=m_vmax,
-                                 text_label='$m$')
-    ax_b_m.set_yticklabels([])
-    
-    # Subplot (c): ret Daytime
-    gl_c, gb_c, gw_c, gh_c = get_group_rect(1, 0)
-    
-    ax_c_k = fig.add_axes(get_inner_rect(gl_c, gb_c, True))
-    im_c_k = plot_single_heatmap(ax_c_k, ret_k_day, SEASONS, OCEANS,
-                                 HEATMAP_CMAP, vmin=k_vmin, vmax=k_vmax,
-                                 text_label='$k_{\\mathrm{ret}}$')
-    ax_c_k.set_title(
-        f'{format_panel_tag(2, "nature")} Retrieval-Domain Coef., Daytime',
-        fontsize=SIZE_PARAMS['title'], pad=10, loc='left', x=-0.40
-    )
-    
-    ax_c_b = fig.add_axes(get_inner_rect(gl_c, gb_c, False))
-    im_c_b = plot_single_heatmap(ax_c_b, ret_b_day, SEASONS, OCEANS,
-                                 B_CMAP, vmin=b_vmin, vmax=b_vmax,
-                                 text_label='$l$')
-    ax_c_b.set_yticklabels([])
-    
-    # Subplot (d): msk Daytime
-    gl_d, gb_d, gw_d, gh_d = get_group_rect(1, 1)
-    
-    ax_d_k = fig.add_axes(get_inner_rect(gl_d, gb_d, True))
-    im_d_k = plot_single_heatmap(ax_d_k, msk_k_day, SEASONS, OCEANS,
-                                 HEATMAP_CMAP, vmin=k_vmin, vmax=k_vmax,
-                                 text_label='$k_{\\mathrm{msk}}$')
-    ax_d_k.set_title(
-        f'{format_panel_tag(3, "nature")} Mask-Domain Coef., Daytime',
-        fontsize=SIZE_PARAMS['title'], pad=10, loc='left', x=-0.40
-    )
-    
-    ax_d_m = fig.add_axes(get_inner_rect(gl_d, gb_d, False))
-    im_d_m = plot_single_heatmap(ax_d_m, msk_m_day, SEASONS, OCEANS,
-                                 M_CMAP, vmin=m_vmin, vmax=m_vmax,
-                                 text_label='$m$')
-    ax_d_m.set_yticklabels([])
-    
-    # =========================
-    # Colorbars below heatmaps
-    # =========================
-    cbar_specs = [
-        (im_a_k, gl_c, True, '$k$'),
-        (im_a_b, gl_c, False, '$l$'),
-        (im_b_k, gl_d, True, '$k$'),
-        (im_b_m, gl_d, False, '$m$'),
+    # Heatmap data and labels
+    k_data_list = [
+        (ret_k_1030, '$k_{\\mathrm{ret,1030}}$'),
+        (ret_k_day,   '$k_{\\mathrm{ret,day}}$'),
+        (msk_k_1030,  '$k_{\\mathrm{msk,1030}}$'),
+        (msk_k_day,   '$k_{\\mathrm{msk,day}}$'),
+    ]
+    b_data_list = [
+        (ret_b_1030, '$b_{\\mathrm{ret,1030}}$'),
+        (ret_b_day,   '$b_{\\mathrm{ret,day}}$'),
+        (msk_b_1030,  '$b_{\\mathrm{msk,1030}}$'),
+        (msk_b_day,   '$b_{\\mathrm{msk,day}}$'),
     ]
     
-    for im, group_left, is_left, label in cbar_specs:
-        cax = fig.add_axes(get_cbar_rect(group_left, is_left))
-        cbar = fig.colorbar(im, cax=cax, orientation='horizontal')
-        cbar.set_label(label, fontsize=SIZE_PARAMS['cbar_label'])
-        cbar.ax.tick_params(labelsize=SIZE_PARAMS['cbar_tick'])
+    # Row 0: k heatmaps
+    im_k_list = []
+    for col, (data, label) in enumerate(k_data_list):
+        left = left_margin + col * hm_w
+        bottom = bottom_margin + bar_height + 0.03 + cbar_height + cbar_gap + hm_h
+        ax = fig.add_axes([left, bottom, hm_w, hm_h])
+        im = plot_single_heatmap(ax, data, SEASONS, OCEANS,
+                                 HEATMAP_CMAP, vmin=k_vmin, vmax=k_vmax,
+                                 text_label=label)
+        im_k_list.append(im)
+        if col > 0:
+            ax.set_yticklabels([])
+    
+    # Row 1: b heatmaps
+    im_b_list = []
+    for col, (data, label) in enumerate(b_data_list):
+        left = left_margin + col * hm_w
+        bottom = bottom_margin + bar_height + 0.03 + cbar_height + cbar_gap
+        ax = fig.add_axes([left, bottom, hm_w, hm_h])
+        im = plot_single_heatmap(ax, data, SEASONS, OCEANS,
+                                 B_CMAP, vmin=b_vmin, vmax=b_vmax,
+                                 text_label=label)
+        im_b_list.append(im)
+        if col > 0:
+            ax.set_yticklabels([])
+    
+    # Title above the heatmap rows (left-aligned)
+    fig.text(left_margin, bottom_margin + bar_height + 0.02 + cbar_height + cbar_gap + hm_h * 2 + 0.01,
+             f'{format_panel_tag(0, "nature")} Correction Coefficients',
+             fontsize=SIZE_PARAMS['title'], ha='left', va='bottom')
+    
+    # Colorbars on the right side
+    cbar_width = 0.012
+    cbar_right_x = 1 - right_margin - cbar_width
+    
+    # k colorbar (right of row 0)
+    cax_k = fig.add_axes([cbar_right_x, bottom_margin + bar_height + 0.04 + cbar_height + cbar_gap + hm_h,
+                          cbar_width, hm_h-0.02])
+    cbar_k = fig.colorbar(im_k_list[0], cax=cax_k, orientation='vertical')
+    cbar_k.set_label('$k$', fontsize=SIZE_PARAMS['cbar_label'])
+    cbar_k.ax.tick_params(labelsize=SIZE_PARAMS['cbar_tick'])
+    
+    # b colorbar (right of row 1)
+    cax_b = fig.add_axes([cbar_right_x, bottom_margin + bar_height + 0.04 + cbar_height + cbar_gap,
+                          cbar_width, hm_h-0.02])
+    cbar_b = fig.colorbar(im_b_list[0], cax=cax_b, orientation='vertical')
+    cbar_b.set_label('$b$', fontsize=SIZE_PARAMS['cbar_label'])
+    cbar_b.ax.tick_params(labelsize=SIZE_PARAMS['cbar_tick'])
     
     # =========================
     # Subplot (e): IRF ratio bar chart
@@ -753,18 +668,18 @@ def main():
     # Ratios (left y-axis)
     ratio_keys = ['ret_1030_ratio', 'ret_daytime_ratio', 'msk_1030_ratio', 'msk_daytime_ratio']
     ratio_labels = ['Ret 10:30', 'Ret Daytime', 'Msk 10:30', 'Msk Daytime']
-    colors = ['steelblue', 'lightblue', 'coral', 'salmon']
+    colors = ['steelblue', 'lightblue', 'coral', 'lightsalmon']
     
     for i, (key, label, color) in enumerate(zip(ratio_keys, ratio_labels, colors)):
         means = [irf_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
         stds = [irf_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
         ax_e.bar(x + i * width - 1.5 * width, means, width, yerr=stds,
-                 label=label, color=color, capsize=3, edgecolor='k', linewidth=0.5)
+                 label=label, color=color, capsize=3)
     
     ax_e.set_xticks(x)
     ax_e.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
+    ax_e.set_ylim(0, 1)
     ax_e.set_ylabel('IRF Ratio (Corrected / Original)', fontsize=SIZE_PARAMS['title'] - 1, color='k')
-    ax_e.axhline(y=1.0, color='gray', linestyle='--', linewidth=0.8)
     ax_e.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
     
     # Original IRF values (right y-axis)
@@ -773,9 +688,11 @@ def main():
     ret_orig_vals = [irf_results['ret_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
     msk_orig_vals = [irf_results['msk_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
     
-    ax_e2.scatter(x - 0.5 * width, ret_orig_vals, marker='o', color='darkblue', s=40,
+    ax_e2.scatter(x - 1 * width, ret_orig_vals, marker='o', color='darkblue', s=40,
+                  edgecolors='k', linewidth=0.8,
                   label='IRF$_{\\mathrm{ret,orig}}$', zorder=5)
-    ax_e2.scatter(x + 0.5 * width, msk_orig_vals, marker='s', color='darkred', s=40,
+    ax_e2.scatter(x + 1 * width, msk_orig_vals, marker='s', color='crimson', s=40,
+                  edgecolors='k', linewidth=0.8,
                   label='IRF$_{\\mathrm{msk,orig}}$', zorder=5)
     
     ax_e2.set_ylabel('Original IRF (W m$^{-2}$)', fontsize=SIZE_PARAMS['title'] - 1, color='k')
@@ -783,15 +700,15 @@ def main():
     
     # Title and legend
     ax_e.set_title(
-        f'{format_panel_tag(4, "nature")} IRF Ratio by Ocean',
-        fontsize=SIZE_PARAMS['title'], pad=5, loc='left', x=-0.05
+        f'{format_panel_tag(1, "nature")} IRF',
+        fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
     )
     
-    # Combine legends
+    # Combine legends: first row = 4 bars, second row = 2 scatters
     lines1, labels1 = ax_e.get_legend_handles_labels()
     lines2, labels2 = ax_e2.get_legend_handles_labels()
     ax_e.legend(lines1 + lines2, labels1 + labels2, fontsize=SIZE_PARAMS['legend'] - 1,
-                loc='upper left', ncol=2, framealpha=0.8)
+                loc='upper center', ncol=4, framealpha=0.8)
     
     # =========================
     # Save figure
