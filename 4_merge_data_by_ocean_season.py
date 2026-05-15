@@ -137,6 +137,9 @@ def merge_data_for_ocean_season(ocean, season, uniform_df, cmip_df):
     if 'lat_x' in cmip_merged.columns:
         cmip_merged.rename(columns={'lat_x': 'lat', 'lon_x': 'lon'}, inplace=True)
     
+    # Remove duplicate rows (can arise from overlapping east/west uniform_fov data)
+    cmip_merged.drop_duplicates(inplace=True)
+    
     return cmip_merged
 
 

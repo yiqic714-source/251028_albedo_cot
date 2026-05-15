@@ -192,7 +192,7 @@ def main():
         x_label='ln(AOD)', y_label='ln(nd)',
         title='ln(nd) vs ln(AOD) with Linear Fit',
         fig_name='lnnd_vs_lnaod.png',
-        csv_name='coef_lnnd_vs_lnaod.csv',
+        csv_name='sensitivity_lnnd_vs_lnaod.csv',
         trim_pct=AOD_TRIM,
         legend_loc='lower right'
     )
@@ -203,7 +203,7 @@ def main():
         x_label='ln(nd)', y_label='cf_ret',
         title='cf_ret vs ln(nd) with Linear Fit',
         fig_name='cf_ret_vs_lnnd.png',
-        csv_name='coef_cf_ret_vs_lnnd.csv',
+        csv_name='sensitivity_cfret_vs_lnnd.csv',
         trim_pct=ND_TRIM,
         legend_loc='upper right'
     )
@@ -214,7 +214,7 @@ def main():
         x_label='ln(nd)', y_label='cf_msk',
         title='cf_msk vs ln(nd) with Linear Fit',
         fig_name='cf_msk_vs_lnnd.png',
-        csv_name='coef_cf_msk_vs_lnnd.csv',
+        csv_name='sensitivity_cfmsk_vs_lnnd.csv',
         trim_pct=ND_TRIM,
         legend_loc='upper right',
     )
