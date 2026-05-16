@@ -288,9 +288,11 @@ def calc_irf_and_beta_ratios():
         'irf_ret_1030_ratio': {}, 'irf_ret_day_ratio': {},
         'irf_msk_1030_ratio': {}, 'irf_msk_day_ratio': {},
         'irf_ret_orig': {}, 'irf_msk_orig': {},
+        'irf_ret_day': {}, 'irf_msk_day': {},
         'Ac_corr_ret_1030': {}, 'Ac_corr_ret_day': {},
         'Ac_corr_msk_1030': {}, 'Ac_corr_msk_day': {},
         'beta_ret_orig': {}, 'beta_msk_orig': {},
+        'beta_ret_day': {}, 'beta_msk_day': {},
         'beta_ratio_ret_1030': {}, 'beta_ratio_ret_day': {},
         'beta_ratio_msk_1030': {}, 'beta_ratio_msk_day': {},
     }
@@ -364,6 +366,18 @@ def calc_irf_and_beta_ratios():
             beta_ratio_msk_1030 = calc_beta(k_msk_1030, cf_msk_vals, Ac_corr_msk_1030, aclr_vals, dcf_msk) / beta_msk_orig
             beta_ratio_msk_day = calc_beta(k_msk_day, cf_msk_vals, Ac_corr_msk_day, aclr_vals, dcf_msk) / beta_msk_orig
             
+            # Corrected IRF values
+            irf_ret_day = calc_irf(k_ret_day, cf_ret_vals, Ac_corr_day, irf_base_sub)
+            irf_msk_day = calc_irf(k_msk_day, cf_msk_vals, Ac_corr_msk_day, irf_base_sub)
+            irf_ret_day_mean = np.nansum(irf_ret_day * area) / total_area
+            irf_msk_day_mean = np.nansum(irf_msk_day * area) / total_area
+            
+            # Corrected beta values
+            beta_ret_day = calc_beta(k_ret_day, cf_ret_vals, Ac_corr_day, aclr_vals, dcf_ret)
+            beta_msk_day = calc_beta(k_msk_day, cf_msk_vals, Ac_corr_msk_day, aclr_vals, dcf_msk)
+            beta_ret_day_mean = np.nansum(beta_ret_day * area) / total_area
+            beta_msk_day_mean = np.nansum(beta_msk_day * area) / total_area
+            
             # Store results (area-weighted means)
             results['irf_ret_1030_ratio'][(ocean, season)] = np.nansum(irf_ratio_ret_1030 * area) / total_area
             results['irf_ret_day_ratio'][(ocean, season)] = np.nansum(irf_ratio_ret_day * area) / total_area
@@ -371,6 +385,8 @@ def calc_irf_and_beta_ratios():
             results['irf_msk_day_ratio'][(ocean, season)] = np.nansum(irf_ratio_msk_day * area) / total_area
             results['irf_ret_orig'][(ocean, season)] = irf_ret_orig_mean
             results['irf_msk_orig'][(ocean, season)] = irf_msk_orig_mean
+            results['irf_ret_day'][(ocean, season)] = irf_ret_day_mean
+            results['irf_msk_day'][(ocean, season)] = irf_msk_day_mean
             
             results['beta_ratio_ret_1030'][(ocean, season)] = np.nansum(beta_ratio_ret_1030 * area) / total_area
             results['beta_ratio_ret_day'][(ocean, season)] = np.nansum(beta_ratio_ret_day * area) / total_area
@@ -378,6 +394,8 @@ def calc_irf_and_beta_ratios():
             results['beta_ratio_msk_day'][(ocean, season)] = np.nansum(beta_ratio_msk_day * area) / total_area
             results['beta_ret_orig'][(ocean, season)] = beta_ret_orig_mean
             results['beta_msk_orig'][(ocean, season)] = beta_msk_orig_mean
+            results['beta_ret_day'][(ocean, season)] = beta_ret_day_mean
+            results['beta_msk_day'][(ocean, season)] = beta_msk_day_mean
             
             # Store area-weighted mean Ac_corr values
             results['Ac_corr_ret_1030'][(ocean, season)] = np.nansum(Ac_corr_1030 * area) / total_area
@@ -388,9 +406,9 @@ def calc_irf_and_beta_ratios():
     # Aggregate to ocean level (average across seasons)
     ocean_results = {}
     for key in ['irf_ret_1030_ratio', 'irf_ret_day_ratio', 'irf_msk_1030_ratio', 'irf_msk_day_ratio',
-                'irf_ret_orig', 'irf_msk_orig',
+                'irf_ret_orig', 'irf_msk_orig', 'irf_ret_day', 'irf_msk_day',
                 'beta_ratio_ret_1030', 'beta_ratio_ret_day','beta_ratio_msk_1030', 'beta_ratio_msk_day',
-                'beta_ret_orig', 'beta_msk_orig',]:
+                'beta_ret_orig', 'beta_msk_orig', 'beta_ret_day', 'beta_msk_day',]:
         ocean_results[key] = {}
         for ocean in OCEANS:
             vals = [results[key].get((ocean, s), np.nan) for s in SEASONS]
@@ -667,21 +685,20 @@ def main():
     cbar_b.ax.tick_params(labelsize=SIZE_PARAMS['cbar_tick'])
     
     # =========================
-    # Subplot (b): IRF ratio bar chart
+    # Subplot (b): IRF bar chart (actual values, no ratios)
     # =========================
     ax_b = fig.add_axes([left_margin, bottom_margin + 0.02, 1 - left_margin - right_margin, bar_height])
     
-    # Prepare data
     ocean_names = OCEANS
     x = np.arange(len(ocean_names))
     width = 0.18
     
-    # Ratios (left y-axis)
-    ratio_keys = ['irf_ret_1030_ratio', 'irf_ret_day_ratio', 'irf_msk_1030_ratio', 'irf_msk_day_ratio']
-    ratio_labels = ['Ret 10:30', 'Ret day', 'Msk 10:30', 'Msk day']
+    irf_keys = ['irf_ret_day', 'irf_ret_orig', 'irf_msk_day', 'irf_msk_orig']
+    irf_labels = ['IRF$_{\\mathrm{ret,corr}}$', 'IRF$_{\\mathrm{ret,orig}}$',
+                  'IRF$_{\\mathrm{msk,corr}}$', 'IRF$_{\\mathrm{msk,orig}}$']
     colors = ['steelblue', 'lightblue', 'coral', 'lightsalmon']
     
-    for i, (key, label, color) in enumerate(zip(ratio_keys, ratio_labels, colors)):
+    for i, (key, label, color) in enumerate(zip(irf_keys, irf_labels, colors)):
         means = [irf_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
         stds = [irf_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
         ax_b.bar(x + i * width - 1.5 * width, means, width, yerr=stds,
@@ -689,49 +706,25 @@ def main():
     
     ax_b.set_xticks(x)
     ax_b.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
-    ax_b.set_ylim(0, 1)
-    ax_b.set_ylabel('Corr. IRF / Orig. IRF', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
+    ax_b.set_ylabel('IRF (W m$^{-2}$)', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
     ax_b.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
+    ax_b.legend(fontsize=SIZE_PARAMS['legend'] - 1, loc='upper center', ncol=4, framealpha=0.8)
     
-    # Original IRF values (right y-axis)
-    ax_b2 = ax_b.twinx()
-    
-    ret_orig_vals = [irf_results['irf_ret_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
-    msk_orig_vals = [irf_results['irf_msk_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
-    
-    ax_b2.scatter(x - 1 * width, ret_orig_vals, marker='o', color='darkblue', s=40,
-                  edgecolors='k', linewidth=0.8,
-                  label='IRF$_{\\mathrm{ret,orig}}$', zorder=5)
-    ax_b2.scatter(x + 1 * width, msk_orig_vals, marker='s', color='crimson', s=40,
-                  edgecolors='k', linewidth=0.8,
-                  label='IRF$_{\\mathrm{msk,orig}}$', zorder=5)
-    
-    ax_b2.set_ylabel('Orig. IRF (W m$^{-2}$)', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
-    ax_b2.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
-    
-    # Title and legend
     ax_b.set_title(
         f'{format_panel_tag(1, "nature")} IRF',
         fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
     )
     
-    # Combine legends: first row = 4 bars, second row = 2 scatters
-    lines1, labels1 = ax_b.get_legend_handles_labels()
-    lines2, labels2 = ax_b2.get_legend_handles_labels()
-    ax_b.legend(lines1 + lines2, labels1 + labels2, fontsize=SIZE_PARAMS['legend'] - 1,
-                loc='upper center', ncol=4, framealpha=0.8)
-    
     # =========================
-    # Subplot (c): IRF / CF Adjustment bar chart
+    # Subplot (c): Beta bar chart (actual values, no ratios)
     # =========================
     ax_c = fig.add_axes([left_margin, bottom_margin - bar_height - 0.04, 1 - left_margin - right_margin, bar_height])
     
-    # Ratios (left y-axis): corrected / original
-    beta_ratio_keys = ['beta_ratio_ret_1030', 'beta_ratio_ret_day',
-                      'beta_ratio_msk_1030', 'beta_ratio_msk_day']
-    beta_ratio_labels = ['Ret 10:30', 'Ret day', 'Msk 10:30', 'Msk day']
+    beta_keys = ['beta_ret_day', 'beta_ret_orig', 'beta_msk_day', 'beta_msk_orig']
+    beta_labels = ['$\\beta_{\\mathrm{ret,corr}}$', '$\\beta_{\\mathrm{ret,orig}}$',
+                   '$\\beta_{\\mathrm{msk,corr}}$', '$\\beta_{\\mathrm{msk,orig}}$']
     
-    for i, (key, label, color) in enumerate(zip(beta_ratio_keys, beta_ratio_labels, colors)):
+    for i, (key, label, color) in enumerate(zip(beta_keys, beta_labels, colors)):
         means = [irf_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
         stds = [irf_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
         ax_c.bar(x + i * width - 1.5 * width, means, width, yerr=stds,
@@ -739,36 +732,14 @@ def main():
     
     ax_c.set_xticks(x)
     ax_c.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
-    ax_c.set_ylabel(r'Corr. $\beta$ / Orig. $\beta$', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
-    ax_c.set_ylim(0, 4)
+    ax_c.set_ylabel(r'$\beta$', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
     ax_c.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
-    
-    # Original IRF/CF Adjustment values (right y-axis)
-    ax_c2 = ax_c.twinx()
-    
-    beta_ret_orig_vals = [irf_results['beta_ret_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
-    beta_msk_orig_vals = [irf_results['beta_msk_orig'].get(o, (np.nan, np.nan))[0] for o in ocean_names]
-    
-    ax_c2.scatter(x - 1 * width, beta_ret_orig_vals, marker='o', color='darkblue', s=40,
-                  edgecolors='k', linewidth=0.8,
-                  label='$\\beta_{\\mathrm{ret,orig}}$', zorder=5)
-    ax_c2.scatter(x + 1 * width, beta_msk_orig_vals, marker='s', color='crimson', s=40,
-                  edgecolors='k', linewidth=0.8,
-                  label='$\\beta_{\\mathrm{msk,orig}}$', zorder=5)
-    
-    ax_c2.set_ylabel(r'Orig.  $\beta$', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
-    ax_c2.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
+    ax_c.legend(fontsize=SIZE_PARAMS['legend'] - 1, loc='upper center', ncol=4, framealpha=0.8)
     
     ax_c.set_title(
         rf'{format_panel_tag(2, "nature")} $\beta$',
         fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
     )
-    
-    # Combine legends
-    lines1_c, labels1_c = ax_c.get_legend_handles_labels()
-    lines2_c, labels2_c = ax_c2.get_legend_handles_labels()
-    ax_c.legend(lines1_c + lines2_c, labels1_c + labels2_c, fontsize=SIZE_PARAMS['legend'] - 1,
-                loc='upper center', ncol=4, framealpha=0.8)
     
     # =========================
     # Save figure
