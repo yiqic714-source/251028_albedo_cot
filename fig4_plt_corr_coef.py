@@ -11,7 +11,7 @@ from utils_fitting import oceans, format_panel_tag
 # Paths and basic settings
 # =========================
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
-COEF_CSV = os.path.join(BASE_PATH, 'processed_data', 'sensitivity_albedo_vs_cot.csv')
+COEF_CSV = os.path.join(BASE_PATH, 'processed_data', 'sensitivity_albedo_vs_cot_ratio.csv')
 FIG_SAVE_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_plt_corr_coef.png')
 os.makedirs(os.path.dirname(FIG_SAVE_PATH), exist_ok=True)
 
@@ -187,7 +187,7 @@ def calc_irf(k, cf, Ac, irf_base):
 
 def calc_beta(k, cf, Ac, Aclr, dcf):
     """Beta adjustment per grid cell: k * cf * Ac * (1-Ac) / 3 / (Ac - Aclr) / dcf"""
-    return k / 3.0 * Ac * (1 - Ac) * cf / (Ac - Aclr) / dcf
+    return k / 3.0 * Ac * (1 - Ac) * cf / ((Ac - Aclr) * dcf + k / 3.0 * Ac * (1 - Ac) * cf)
 
 
 def calc_irf_and_beta_ratios():
@@ -258,13 +258,9 @@ def calc_irf_and_beta_ratios():
     coef_lookup = {}
     for _, row in coef_df.iterrows():
         key = (row['Method'], row['Ocean'], row['Season'])
-        coef_lookup[(key, 'k_1030')] = row['Slope_1030']
         coef_lookup[(key, 'k_day')] = row['Slope_Daytime']
-        coef_lookup[(key, 'lnb_1030')] = row['Intercept_1030']
         coef_lookup[(key, 'lnb_day')] = row['Intercept_Daytime']
-        coef_lookup[(key, 'k_1030_unc')] = row['Slope_1030_Unc']
         coef_lookup[(key, 'k_day_unc')] = row['Slope_Daytime_Unc']
-        coef_lookup[(key, 'lnb_1030_unc')] = row['Intercept_1030_Unc']
         coef_lookup[(key, 'lnb_day_unc')] = row['Intercept_Daytime_Unc']
     
     def get_coef(method, ocean, season, var):
@@ -285,16 +281,14 @@ def calc_irf_and_beta_ratios():
     cf_ret_lookup = cf_ret_df.set_index(['Ocean', 'Season'])['Slope'].to_dict()
     
     results = {
-        'irf_ret_1030_ratio': {}, 'irf_ret_day_ratio': {},
-        'irf_msk_1030_ratio': {}, 'irf_msk_day_ratio': {},
         'irf_ret_orig': {}, 'irf_msk_orig': {},
         'irf_ret_day': {}, 'irf_msk_day': {},
-        'Ac_corr_ret_1030': {}, 'Ac_corr_ret_day': {},
-        'Ac_corr_msk_1030': {}, 'Ac_corr_msk_day': {},
+        'irf_ret_day_unc': {}, 'irf_msk_day_unc': {},
+        'Ac_corr_ret_day': {},
+        'Ac_corr_msk_day': {},
         'beta_ret_orig': {}, 'beta_msk_orig': {},
         'beta_ret_day': {}, 'beta_msk_day': {},
-        'beta_ratio_ret_1030': {}, 'beta_ratio_ret_day': {},
-        'beta_ratio_msk_1030': {}, 'beta_ratio_msk_day': {},
+        'beta_ret_day_unc': {}, 'beta_msk_day_unc': {},
     }
     
     for ocean in OCEANS:
@@ -310,19 +304,21 @@ def calc_irf_and_beta_ratios():
                 continue
             
             # Get coefficients for this ocean-season
-            k_ret_1030 = get_coef('ret', ocean, season, 'k_1030')
             k_ret_day = get_coef('ret', ocean, season, 'k_day')
-            lnb_ret_1030 = get_coef('ret', ocean, season, 'lnb_1030')
             lnb_ret_day = get_coef('ret', ocean, season, 'lnb_day')
-            b_ret_1030 = np.exp(lnb_ret_1030) if not np.isnan(lnb_ret_1030) else np.nan
             b_ret_day = np.exp(lnb_ret_day) if not np.isnan(lnb_ret_day) else np.nan
             
-            k_msk_1030 = get_coef('msk', ocean, season, 'k_1030')
+            k_ret_day_unc = get_coef('ret', ocean, season, 'k_day_unc')
+            lnb_ret_day_unc = get_coef('ret', ocean, season, 'lnb_day_unc')
+            b_ret_day_unc = b_ret_day * lnb_ret_day_unc if not np.isnan(b_ret_day) else np.nan
+            
             k_msk_day = get_coef('msk', ocean, season, 'k_day')
-            lnb_msk_1030 = get_coef('msk', ocean, season, 'lnb_1030')
             lnb_msk_day = get_coef('msk', ocean, season, 'lnb_day')
-            b_msk_1030 = np.exp(lnb_msk_1030) if not np.isnan(lnb_msk_1030) else np.nan
             b_msk_day = np.exp(lnb_msk_day) if not np.isnan(lnb_msk_day) else np.nan
+            
+            k_msk_day_unc = get_coef('msk', ocean, season, 'k_day_unc')
+            lnb_msk_day_unc = get_coef('msk', ocean, season, 'lnb_day_unc')
+            b_msk_day_unc = b_msk_day * lnb_msk_day_unc if not np.isnan(b_msk_day) else np.nan
             
             # Per-grid-cell data
             cot_sub = sub['cot_mod08'].values
@@ -332,23 +328,11 @@ def calc_irf_and_beta_ratios():
             Ac_orig_sub = Ac_orig[mask.values]
             irf_base_sub = irf_base.values[mask.values]
             
-            # Corrected albedo
-            Ac_corr_1030 = calc_Ac(b_ret_1030, k_ret_1030, cot_sub)
-            Ac_corr_day = calc_Ac(b_ret_day, k_ret_day, cot_sub)
-            Ac_corr_msk_1030 = calc_Ac(b_msk_1030, k_msk_1030, cot_sub)
-            Ac_corr_msk_day = calc_Ac(b_msk_day, k_msk_day, cot_sub)
-            
             # Original IRF (computed inside loop for consistency with beta)
             irf_ret_orig = calc_irf(1.0, cf_ret_vals, Ac_orig_sub, irf_base_sub)
             irf_msk_orig = calc_irf(1.0, cf_msk_vals, Ac_orig_sub, irf_base_sub)
             irf_ret_orig_mean = np.nansum(irf_ret_orig * area) / total_area
             irf_msk_orig_mean = np.nansum(irf_msk_orig * area) / total_area
-            
-            # IRF ratios (corrected / original), same pattern as beta
-            irf_ratio_ret_1030 = calc_irf(k_ret_1030, cf_ret_vals, Ac_corr_1030, irf_base_sub) / irf_ret_orig
-            irf_ratio_ret_day = calc_irf(k_ret_day, cf_ret_vals, Ac_corr_day, irf_base_sub) / irf_ret_orig
-            irf_ratio_msk_1030 = calc_irf(k_msk_1030, cf_msk_vals, Ac_corr_msk_1030, irf_base_sub) / irf_msk_orig
-            irf_ratio_msk_day = calc_irf(k_msk_day, cf_msk_vals, Ac_corr_msk_day, irf_base_sub) / irf_msk_orig
             
             # ---- Compute IRF / CF Adjustment (beta) ----
             dcf_ret = cf_ret_lookup.get((ocean, season), np.nan)
@@ -360,78 +344,85 @@ def calc_irf_and_beta_ratios():
             beta_ret_orig_mean = np.nansum(beta_ret_orig * area) / total_area
             beta_msk_orig_mean = np.nansum(beta_msk_orig * area) / total_area
             
-            # Corrected beta (using corrected Ac with k and b)
-            beta_ratio_ret_1030 = calc_beta(k_ret_1030, cf_ret_vals, Ac_corr_1030, aclr_vals, dcf_ret) / beta_ret_orig
-            beta_ratio_ret_day = calc_beta(k_ret_day, cf_ret_vals, Ac_corr_day, aclr_vals, dcf_ret) / beta_ret_orig
-            beta_ratio_msk_1030 = calc_beta(k_msk_1030, cf_msk_vals, Ac_corr_msk_1030, aclr_vals, dcf_msk) / beta_msk_orig
-            beta_ratio_msk_day = calc_beta(k_msk_day, cf_msk_vals, Ac_corr_msk_day, aclr_vals, dcf_msk) / beta_msk_orig
+            # Corrected IRF and beta values (per grid cell, then area-weighted)
+            Ac_corr_day = calc_Ac(b_ret_day, k_ret_day, cot_sub)
+            Ac_corr_msk_day = calc_Ac(b_msk_day, k_msk_day, cot_sub)
             
-            # Corrected IRF values
             irf_ret_day = calc_irf(k_ret_day, cf_ret_vals, Ac_corr_day, irf_base_sub)
             irf_msk_day = calc_irf(k_msk_day, cf_msk_vals, Ac_corr_msk_day, irf_base_sub)
-            irf_ret_day_mean = np.nansum(irf_ret_day * area) / total_area
-            irf_msk_day_mean = np.nansum(irf_msk_day * area) / total_area
-            
-            # Corrected beta values
             beta_ret_day = calc_beta(k_ret_day, cf_ret_vals, Ac_corr_day, aclr_vals, dcf_ret)
             beta_msk_day = calc_beta(k_msk_day, cf_msk_vals, Ac_corr_msk_day, aclr_vals, dcf_msk)
+            
+            # Area-weighted mean and standard deviation across grid cells
+            irf_ret_day_mean = np.nansum(irf_ret_day * area) / total_area
+            irf_msk_day_mean = np.nansum(irf_msk_day * area) / total_area
             beta_ret_day_mean = np.nansum(beta_ret_day * area) / total_area
             beta_msk_day_mean = np.nansum(beta_msk_day * area) / total_area
             
+            # Weighted std across grid cells
+            def weighted_std(vals, w):
+                valid = np.isfinite(vals) & np.isfinite(w) & (w > 0)
+                v, wgt = vals[valid], w[valid]
+                if len(v) < 2:
+                    return 0.0
+                mean = np.average(v, weights=wgt)
+                variance = np.average((v - mean)**2, weights=wgt)
+                return np.sqrt(variance)
+            
+            irf_ret_day_unc = weighted_std(irf_ret_day, area)
+            irf_msk_day_unc = weighted_std(irf_msk_day, area)
+            beta_ret_day_unc = weighted_std(beta_ret_day, area)
+            beta_msk_day_unc = weighted_std(beta_msk_day, area)
+            
             # Store results (area-weighted means)
-            results['irf_ret_1030_ratio'][(ocean, season)] = np.nansum(irf_ratio_ret_1030 * area) / total_area
-            results['irf_ret_day_ratio'][(ocean, season)] = np.nansum(irf_ratio_ret_day * area) / total_area
-            results['irf_msk_1030_ratio'][(ocean, season)] = np.nansum(irf_ratio_msk_1030 * area) / total_area
-            results['irf_msk_day_ratio'][(ocean, season)] = np.nansum(irf_ratio_msk_day * area) / total_area
             results['irf_ret_orig'][(ocean, season)] = irf_ret_orig_mean
             results['irf_msk_orig'][(ocean, season)] = irf_msk_orig_mean
             results['irf_ret_day'][(ocean, season)] = irf_ret_day_mean
             results['irf_msk_day'][(ocean, season)] = irf_msk_day_mean
+            results['irf_ret_day_unc'][(ocean, season)] = irf_ret_day_unc
+            results['irf_msk_day_unc'][(ocean, season)] = irf_msk_day_unc
             
-            results['beta_ratio_ret_1030'][(ocean, season)] = np.nansum(beta_ratio_ret_1030 * area) / total_area
-            results['beta_ratio_ret_day'][(ocean, season)] = np.nansum(beta_ratio_ret_day * area) / total_area
-            results['beta_ratio_msk_1030'][(ocean, season)] = np.nansum(beta_ratio_msk_1030 * area) / total_area
-            results['beta_ratio_msk_day'][(ocean, season)] = np.nansum(beta_ratio_msk_day * area) / total_area
             results['beta_ret_orig'][(ocean, season)] = beta_ret_orig_mean
             results['beta_msk_orig'][(ocean, season)] = beta_msk_orig_mean
             results['beta_ret_day'][(ocean, season)] = beta_ret_day_mean
             results['beta_msk_day'][(ocean, season)] = beta_msk_day_mean
+            results['beta_ret_day_unc'][(ocean, season)] = beta_ret_day_unc
+            results['beta_msk_day_unc'][(ocean, season)] = beta_msk_day_unc
             
             # Store area-weighted mean Ac_corr values
-            results['Ac_corr_ret_1030'][(ocean, season)] = np.nansum(Ac_corr_1030 * area) / total_area
             results['Ac_corr_ret_day'][(ocean, season)] = np.nansum(Ac_corr_day * area) / total_area
-            results['Ac_corr_msk_1030'][(ocean, season)] = np.nansum(Ac_corr_msk_1030 * area) / total_area
             results['Ac_corr_msk_day'][(ocean, season)] = np.nansum(Ac_corr_msk_day * area) / total_area
     
     # Aggregate to ocean level (average across seasons)
     ocean_results = {}
-    for key in ['irf_ret_1030_ratio', 'irf_ret_day_ratio', 'irf_msk_1030_ratio', 'irf_msk_day_ratio',
-                'irf_ret_orig', 'irf_msk_orig', 'irf_ret_day', 'irf_msk_day',
-                'beta_ratio_ret_1030', 'beta_ratio_ret_day','beta_ratio_msk_1030', 'beta_ratio_msk_day',
-                'beta_ret_orig', 'beta_msk_orig', 'beta_ret_day', 'beta_msk_day',]:
+    
+    # Original values: error bars = 0 (no k/b uncertainty)
+    for key in ['irf_ret_orig', 'irf_msk_orig', 'beta_ret_orig', 'beta_msk_orig']:
         ocean_results[key] = {}
         for ocean in OCEANS:
             vals = [results[key].get((ocean, s), np.nan) for s in SEASONS]
             vals = [v for v in vals if not np.isnan(v)]
             if vals:
-                ocean_results[key][ocean] = (np.mean(vals), np.std(vals) if len(vals) > 1 else 0.0)
+                ocean_results[key][ocean] = (np.mean(vals), 0.0)
             else:
                 ocean_results[key][ocean] = (np.nan, np.nan)
     
-    # Print mean Ac_corr values per ocean
-    print("\n=== Mean Ac_corr values (area-weighted, per ocean) ===")
-    for ac_key, ac_label in [('Ac_corr_ret_1030', 'Ac_corr_ret_1030'),
-                              ('Ac_corr_ret_day', 'Ac_corr_ret_day'),
-                              ('Ac_corr_msk_1030', 'Ac_corr_msk_1030'),
-                              ('Ac_corr_msk_day', 'Ac_corr_msk_day')]:
-        print(f"  {ac_label}:")
+    # For corrected values, use uncertainty from k/lnb propagation (not seasonal std)
+    for key in ['irf_ret_day', 'irf_msk_day', 'beta_ret_day', 'beta_msk_day']:
+        unc_key = key + '_unc'
+        ocean_results[key] = {}
         for ocean in OCEANS:
-            vals = [results.get(ac_key, {}).get((ocean, s), np.nan) for s in SEASONS]
+            vals = [results[key].get((ocean, s), np.nan) for s in SEASONS]
+            unc_vals = [results[unc_key].get((ocean, s), np.nan) for s in SEASONS]
             vals = [v for v in vals if not np.isnan(v)]
+            unc_vals = [u for u in unc_vals if not np.isnan(u)]
             if vals:
-                print(f"    {ocean}: mean = {np.mean(vals):.4f}, std = {np.std(vals):.4f}")
+                # Mean across seasons, uncertainty = RMS of seasonal uncertainties
+                mean_val = np.mean(vals)
+                rms_unc = np.sqrt(np.nanmean([u**2 for u in unc_vals])) if unc_vals else 0.0
+                ocean_results[key][ocean] = (mean_val, rms_unc)
             else:
-                print(f"    {ocean}: no data")
+                ocean_results[key][ocean] = (np.nan, np.nan)
     
     return ocean_results
 
@@ -481,7 +472,7 @@ def plot_global_distributions(df, fig_save_path, icon_style='nature'):
          f'{format_panel_tag(4, icon_style)} $\\ln$COT', ''),
     ]
     
-    fig, axes = plt.subplots(3, 2, figsize=(6.5, 7.5),
+    fig, axes = plt.subplots(3, 2, figsize=(8.5, 7.5),
                              subplot_kw={'projection': ccrs.PlateCarree()})
     plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95,
                         wspace=0.17, hspace=0.25)
@@ -596,10 +587,10 @@ def main():
     # Single subplot with 8 heatmaps in 2x4 grid:
     #   Row 0: k_ret_1030, k_ret_day, k_msk_1030, k_msk_day
     #   Row 1: b_ret_1030, b_ret_day, b_msk_1030, b_msk_day
-    # Two shared colorbars (k and b) below the heatmaps
-    # Bottom subplots: (b) IRF ratio bar chart, (c) IRF/CF Adjustment bar chart
+    # Two shared colorbars (k and b) on the right
+    # Bottom subplots: (b) IRF bar chart, (c) Beta bar chart
     
-    fig = plt.figure(figsize=(14, 11), dpi=100)
+    fig = plt.figure(figsize=(11, 11), dpi=100)
     
     left_margin = 0.06
     right_margin = 0.02
@@ -684,6 +675,22 @@ def main():
     cbar_b.set_label('$b$', fontsize=SIZE_PARAMS['cbar_label'])
     cbar_b.ax.tick_params(labelsize=SIZE_PARAMS['cbar_tick'])
     
+    # Compute global area-weighted mean for each variable
+    # Use ocean areas as weights (approximate total ocean area per region)
+    ocean_areas = {
+        'NPO': 103.3, 'NAO': 41.5, 'TPO': 165.2, 'TAO': 60.0,
+        'TIO': 73.4, 'SPO': 77.0, 'SAO': 40.3, 'SIO': 60.6,
+    }  # in million km2 (approximate)
+    total_ocean_area = sum(ocean_areas.values())
+    
+    def global_mean(results_dict, key):
+        vals = [results_dict[key].get(o, (np.nan, np.nan))[0] for o in OCEANS]
+        weights = [ocean_areas[o] for o in OCEANS]
+        valid = [(v, w) for v, w in zip(vals, weights) if not np.isnan(v)]
+        if not valid:
+            return np.nan
+        return np.average([v for v, _ in valid], weights=[w for _, w in valid])
+    
     # =========================
     # Subplot (b): IRF bar chart (actual values, no ratios)
     # =========================
@@ -696,19 +703,20 @@ def main():
     irf_keys = ['irf_ret_day', 'irf_ret_orig', 'irf_msk_day', 'irf_msk_orig']
     irf_labels = ['IRF$_{\\mathrm{ret,corr}}$', 'IRF$_{\\mathrm{ret,orig}}$',
                   'IRF$_{\\mathrm{msk,corr}}$', 'IRF$_{\\mathrm{msk,orig}}$']
-    colors = ['steelblue', 'lightblue', 'coral', 'lightsalmon']
+    colors = ['blue', 'lightblue', 'firebrick', 'pink']
     
     for i, (key, label, color) in enumerate(zip(irf_keys, irf_labels, colors)):
         means = [irf_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
         stds = [irf_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
-        ax_b.bar(x + i * width - 1.5 * width, means, width, yerr=stds,
-                 label=label, color=color, capsize=3)
+        gmean = global_mean(irf_results, key)
+        ax_b.bar(x + i * width - 1.5 * width, means, width, #yerr=stds,
+                 label=f'{label} ({gmean:.2f})', color=color, capsize=3)
     
     ax_b.set_xticks(x)
     ax_b.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
     ax_b.set_ylabel('IRF (W m$^{-2}$)', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
     ax_b.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
-    ax_b.legend(fontsize=SIZE_PARAMS['legend'] - 1, loc='upper center', ncol=4, framealpha=0.8)
+    ax_b.legend(fontsize=SIZE_PARAMS['legend'] - 1, loc='upper right', ncol=4, framealpha=0.8)
     
     ax_b.set_title(
         f'{format_panel_tag(1, "nature")} IRF',
@@ -727,8 +735,9 @@ def main():
     for i, (key, label, color) in enumerate(zip(beta_keys, beta_labels, colors)):
         means = [irf_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
         stds = [irf_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
-        ax_c.bar(x + i * width - 1.5 * width, means, width, yerr=stds,
-                 label=label, color=color, capsize=3)
+        gmean = global_mean(irf_results, key)
+        ax_c.bar(x + i * width - 1.5 * width, means, width, #yerr=stds,
+                 label=f'{label} ({gmean:.2f})', color=color, capsize=3)
     
     ax_c.set_xticks(x)
     ax_c.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
@@ -737,7 +746,7 @@ def main():
     ax_c.legend(fontsize=SIZE_PARAMS['legend'] - 1, loc='upper center', ncol=4, framealpha=0.8)
     
     ax_c.set_title(
-        rf'{format_panel_tag(2, "nature")} $\beta$',
+        rf'{format_panel_tag(2, "nature")} IRF / CF Adjustment ($\beta$)',
         fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
     )
     

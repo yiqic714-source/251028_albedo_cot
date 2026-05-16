@@ -258,10 +258,13 @@ def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data
     from the SBDART lookup table.
     
     Returns:
-        diff_k, diff_b: DataFrames (index=Ocean, columns=Season) with SZA corrections
+        diff_k, diff_b: DataFrames (index=Ocean, columns=Season) with SZA corrections (additive)
+        ratio_k, ratio_b: DataFrames (index=Ocean, columns=Season) with SZA ratios (multiplicative)
     """
     diff_k_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
     diff_b_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+    ratio_k_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
+    ratio_b_data = pd.DataFrame(index=oceans, columns=SEASONS, dtype=float)
 
     for ocean in oceans:
         od = all_processed_ocean_data[ocean]
@@ -286,10 +289,12 @@ def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data
                 b_weighted = get_value_at_sza(cos_sza, cos_weighted_sza, intercept_vals)
                 if np.isfinite(k_weighted) and np.isfinite(k_mean):
                     diff_k_data.loc[ocean, season] = k_weighted - k_mean
+                    ratio_k_data.loc[ocean, season] = k_weighted / k_mean
                 if np.isfinite(b_weighted) and np.isfinite(b_mean):
                     diff_b_data.loc[ocean, season] = b_weighted - b_mean
+                    ratio_b_data.loc[ocean, season] = b_weighted / b_mean
 
-    return diff_k_data, diff_b_data
+    return diff_k_data, diff_b_data, ratio_k_data, ratio_b_data
 
 
 def main():
@@ -335,8 +340,11 @@ def main():
     print("\nComputing SZA correction for daytime-mean coefficients...")
     seasonal_stats = calculate_seasonal_stats(oceans, input_dir)
     weight_dict = load_weighted_angles(WEIGHTED_FILE)
-    diff_k, diff_b = \
+    diff_k, diff_b, ratio_k, ratio_b = \
         compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data)
+
+    # Switch: True = use multiplicative ratio, False = use additive difference
+    USE_RATIO = True
 
     # Step 3: Build output CSV with both 10:30 and daytime-mean coefficients
     output_records = []
@@ -350,16 +358,24 @@ def main():
             k_1030_unc = row['Slope_Unc']
             b_1030_unc = row['Intercept_Unc']
 
-            # Apply SZA correction to get daytime-mean
-            dk = diff_k.loc[ocean, season] if np.isfinite(diff_k.loc[ocean, season]) else 0
-            db = diff_b.loc[ocean, season] if np.isfinite(diff_b.loc[ocean, season]) else 0
-
-            k_daytime = k_1030 + dk if np.isfinite(k_1030) else np.nan
-            b_daytime = b_1030 + db if np.isfinite(b_1030) else np.nan
-
-            # Uncertainty propagation: unc_daytime = unc_1030 (since dk/db are from lookup table without uncertainty)
-            k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
-            b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
+            if USE_RATIO:
+                # Multiplicative correction: multiply by ratio
+                rk = ratio_k.loc[ocean, season] if np.isfinite(ratio_k.loc[ocean, season]) else 1
+                rb = ratio_b.loc[ocean, season] if np.isfinite(ratio_b.loc[ocean, season]) else 1
+                k_daytime = k_1030 * rk if np.isfinite(k_1030) else np.nan
+                b_daytime = b_1030 * rb if np.isfinite(b_1030) else np.nan
+                # Uncertainty also multiplied by ratio
+                k_daytime_unc = k_1030_unc * rk if np.isfinite(k_daytime) else np.nan
+                b_daytime_unc = b_1030_unc * rb if np.isfinite(b_daytime) else np.nan
+            else:
+                # Additive correction: add difference
+                dk = diff_k.loc[ocean, season] if np.isfinite(diff_k.loc[ocean, season]) else 0
+                db = diff_b.loc[ocean, season] if np.isfinite(diff_b.loc[ocean, season]) else 0
+                k_daytime = k_1030 + dk if np.isfinite(k_1030) else np.nan
+                b_daytime = b_1030 + db if np.isfinite(b_1030) else np.nan
+                # Uncertainty unchanged (dk/db from lookup table without uncertainty)
+                k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
+                b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
 
             output_records.append({
                 'Method': method,
@@ -380,7 +396,10 @@ def main():
     # Save to CSV
     output_dir = '/home/chenyiqi/251028_albedo_cot/processed_data'
     os.makedirs(output_dir, exist_ok=True)
-    output_csv_path = os.path.join(output_dir, 'sensitivity_albedo_vs_cot.csv')
+    if USE_RATIO:
+        output_csv_path = os.path.join(output_dir, 'sensitivity_albedo_vs_cot_ratio.csv')
+    else:
+        output_csv_path = os.path.join(output_dir, 'sensitivity_albedo_vs_cot_diff.csv')
     output_df.to_csv(output_csv_path, index=False)
     print(f"\nMerged coefficients saved to: {output_csv_path}")
     print(f"Total records: {len(output_df)}")
