@@ -12,11 +12,11 @@ from utils_fitting import oceans, format_panel_tag
 # =========================
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
 COEF_CSV = os.path.join(BASE_PATH, 'processed_data', 'sensitivity_albedo_vs_cot_ratio.csv')
-FIG_SAVE_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_albedo_sensitivity_and_irf.png')
+FIG_SAVE_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_dac_o_dlncot_irf_and_erf.png')
 os.makedirs(os.path.dirname(FIG_SAVE_PATH), exist_ok=True)
 
 # Switch to control whether to plot global distributions (3x2 map)
-PLOT_GLOBAL_DIST = True
+PLOT_GLOBAL_DIST = False
 
 OCEANS = oceans  # 8 ocean regions
 SEASONS = ['MAM', 'JJA', 'SON', 'DJF']
@@ -141,13 +141,18 @@ def calc_irf(ac_sensitivity, cf, irf_base):
     return irf_base /3 * ac_sensitivity * cf
 
 
+def calc_erf(irf, irf_base, Ac, Aclr, dcf):
+    """ ERF = IRF + IRF_base * (Ac - Aclr) * dcf """
+    return irf + irf_base * (Ac - Aclr) * dcf
+
+
 # =========================
 # Bar data calculation
 # =========================
 
 def get_bar_data():
     """
-    Calculate albedo sensitivity (as) and IRF for each ocean.
+    Calculate albedo sensitivity (as), IRF, and ERF for each ocean.
     
     Returns
     -------
@@ -155,7 +160,9 @@ def get_bar_data():
       'as_ret_1030', 'as_ret_day', 'as_ret_orig',
       'as_msk_1030', 'as_msk_day', 'as_msk_orig',
       'irf_ret_1030', 'irf_ret_day', 'irf_ret_orig',
-      'irf_msk_1030', 'irf_msk_day', 'irf_msk_orig'
+      'irf_msk_1030', 'irf_msk_day', 'irf_msk_orig',
+      'erf_ret_1030', 'erf_ret_day', 'erf_ret_orig',
+      'erf_msk_1030', 'erf_msk_day', 'erf_msk_orig'
     Each value is a dict {ocean: (mean, std)}
     """
     # Load coefficients
@@ -216,11 +223,19 @@ def get_bar_data():
     cot = seasonal_grid['cot_mod08'].values
     Ac_orig = calc_Ac(0.13, 1, cot)
     
+    # Load CF sensitivity coefficients (dcf)
+    cf_msk_df = load_cf_sensitivity('msk')
+    cf_ret_df = load_cf_sensitivity('ret')
+    cf_msk_lookup = cf_msk_df.set_index(['Ocean', 'Season'])['Slope'].to_dict()
+    cf_ret_lookup = cf_ret_df.set_index(['Ocean', 'Season'])['Slope'].to_dict()
+    
     results = {
         'as_ret_1030': {}, 'as_ret_day': {}, 'as_ret_orig': {},
         'as_msk_1030': {}, 'as_msk_day': {}, 'as_msk_orig': {},
         'irf_ret_1030': {}, 'irf_ret_day': {}, 'irf_ret_orig': {},
         'irf_msk_1030': {}, 'irf_msk_day': {}, 'irf_msk_orig': {},
+        'erf_ret_1030': {}, 'erf_ret_day': {}, 'erf_ret_orig': {},
+        'erf_msk_1030': {}, 'erf_msk_day': {}, 'erf_msk_orig': {},
     }
     
     for ocean in OCEANS:
@@ -281,6 +296,23 @@ def get_bar_data():
             irf_msk_day = calc_irf(as_msk_day, cf_msk_vals, irf_base_sub)
             irf_msk_orig = calc_irf(as_msk_orig, cf_msk_vals, irf_base_sub)
             
+            # CF sensitivity (dcf)
+            dcf_ret = cf_ret_lookup.get((ocean, season), np.nan)
+            dcf_msk = cf_msk_lookup.get((ocean, season), np.nan)
+            
+            # Clear-sky albedo (Aclr): Ac with k=0, b=0.13
+            Aclr = calc_Ac(0.13, 0, cot_sub)
+            
+            # ERF = IRF + IRF_base * (Ac - Aclr) * dcf
+            # Note: irf_base here is swdown * lnnd_o_lnaod * log_aod_diff (without /3)
+            # The IRF already includes /3, but the (Ac-Aclr)*dcf term uses irf_base without /3
+            erf_ret_1030 = calc_erf(irf_ret_1030, irf_base_sub, Ac_ret_1030, Aclr, dcf_ret)
+            erf_ret_day = calc_erf(irf_ret_day, irf_base_sub, Ac_ret_day, Aclr, dcf_ret)
+            erf_ret_orig = calc_erf(irf_ret_orig, irf_base_sub, Ac_orig_sub, Aclr, dcf_ret)
+            erf_msk_1030 = calc_erf(irf_msk_1030, irf_base_sub, Ac_msk_1030, Aclr, dcf_msk)
+            erf_msk_day = calc_erf(irf_msk_day, irf_base_sub, Ac_msk_day, Aclr, dcf_msk)
+            erf_msk_orig = calc_erf(irf_msk_orig, irf_base_sub, Ac_orig_sub, Aclr, dcf_msk)
+            
             # Weighted std function
             def weighted_std(vals, w):
                 valid = np.isfinite(vals) & np.isfinite(w) & (w > 0)
@@ -297,6 +329,8 @@ def get_bar_data():
                 ('as_msk_1030', as_msk_1030), ('as_msk_day', as_msk_day), ('as_msk_orig', as_msk_orig),
                 ('irf_ret_1030', irf_ret_1030), ('irf_ret_day', irf_ret_day), ('irf_ret_orig', irf_ret_orig),
                 ('irf_msk_1030', irf_msk_1030), ('irf_msk_day', irf_msk_day), ('irf_msk_orig', irf_msk_orig),
+                ('erf_ret_1030', erf_ret_1030), ('erf_ret_day', erf_ret_day), ('erf_ret_orig', erf_ret_orig),
+                ('erf_msk_1030', erf_msk_1030), ('erf_msk_day', erf_msk_day), ('erf_msk_orig', erf_msk_orig),
             ]:
                 mean_val = np.nansum(vals * area) / total_area
                 std_val = weighted_std(vals, area)
@@ -431,24 +465,25 @@ def main():
         merged_df = merged_df.merge(unique_lat_month, on=['lat', 'month'], how='left')
         merged_df['grid_area_km2'] = merged_df['lat'].apply(calc_grid_cell_area)
         
-        GLOBAL_DIST_PATH = os.path.join(BASE_PATH, 'figs', 'fig4_global_distributions.png')
+        GLOBAL_DIST_PATH = os.path.join(BASE_PATH, 'figs', 'supp_global_distributions.png')
         plot_global_distributions(merged_df, GLOBAL_DIST_PATH, icon_style='nature')
     
     # =========================
     # Create figure layout
     # =========================
-    # Two subplots stacked vertically:
-    #   (a) Albedo sensitivity bar chart (6 bars per ocean)
+    # Three subplots stacked vertically:
+    #   (a) Albedo sensitivity bar chart (5 bars per ocean)
     #   (b) IRF bar chart (6 bars per ocean)
+    #   (c) ERF bar chart (6 bars per ocean)
     
-    fig = plt.figure(figsize=(11, 8), dpi=100)
+    fig = plt.figure(figsize=(11, 11.5), dpi=100)
     
     left_margin = 0.08
     right_margin = 0.02
     top_margin = 0.04
-    bottom_margin = 0.08
-    bar_height = 0.36
-    gap = 0.08
+    bottom_margin = 0.06
+    bar_height = 0.27
+    gap = 0.06
     
     ocean_names = OCEANS
     x = np.arange(len(ocean_names))
@@ -471,7 +506,7 @@ def main():
     # =========================
     # Subplot (a): Albedo sensitivity bar chart
     # =========================
-    ax_a = fig.add_axes([left_margin, bottom_margin + bar_height + gap,
+    ax_a = fig.add_axes([left_margin, bottom_margin + 2 * (bar_height + gap),
                          1 - left_margin - right_margin, bar_height])
     
     # as_ret_orig and as_msk_orig are identical, merge into one gray bar at the rightmost position
@@ -508,7 +543,7 @@ def main():
     # =========================
     # Subplot (b): IRF bar chart
     # =========================
-    ax_b = fig.add_axes([left_margin, bottom_margin,
+    ax_b = fig.add_axes([left_margin, bottom_margin + bar_height + gap,
                          1 - left_margin - right_margin, bar_height])
     
     # irf_ret_orig and irf_msk_orig are different, keep as separate bars (6 total)
@@ -536,6 +571,39 @@ def main():
     
     ax_b.set_title(
         f'{format_panel_tag(1, "nature")} IRF',
+        fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
+    )
+    
+    # =========================
+    # Subplot (c): ERF bar chart
+    # =========================
+    ax_c = fig.add_axes([left_margin, bottom_margin,
+                         1 - left_margin - right_margin, bar_height])
+    
+    # erf_ret_orig and erf_msk_orig are different, keep as separate bars (6 total)
+    erf_keys = ['erf_ret_day', 'erf_ret_1030', 'erf_ret_orig',
+                'erf_msk_day', 'erf_msk_1030', 'erf_msk_orig']
+    erf_legend_labels = ['Ret, Day', 'Ret, 10:30', 'Ret, Uncorr.',
+                         'Msk, Day', 'Msk, 10:30', 'Msk, Uncorr.']
+    erf_colors = ['steelblue', 'lightblue', 'lightcyan',
+                  'firebrick', 'lightcoral', 'mistyrose']
+    
+    for i, (key, label, color) in enumerate(zip(erf_keys, erf_legend_labels, erf_colors)):
+        means = [bar_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
+        stds = [bar_results[key].get(o, (np.nan, np.nan))[1] for o in ocean_names]
+        gmean = global_mean(bar_results, key)
+        ax_c.bar(x + i * width - 2.5 * width, means, width, yerr=stds,
+                 label=f'{label} ({gmean:.2f})', color=color, edgecolor='k', linewidth=0.5,
+                 capsize=2, error_kw={'linewidth': 0.8})
+    
+    ax_c.set_xticks(x)
+    ax_c.set_xticklabels(ocean_names, fontsize=SIZE_PARAMS['small_tick'])
+    ax_c.set_ylabel('ERF (W m$^{-2}$)', fontsize=SIZE_PARAMS['xylabel'] - 1, color='k')
+    ax_c.tick_params(axis='y', labelsize=SIZE_PARAMS['small_tick'])
+    ax_c.legend(fontsize=SIZE_PARAMS['legend'] - 2, loc='upper right', ncol=3, framealpha=0.8)
+    
+    ax_c.set_title(
+        f'{format_panel_tag(2, "nature")} ERF',
         fontsize=SIZE_PARAMS['title'], pad=5, loc='left'
     )
     
