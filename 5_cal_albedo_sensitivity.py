@@ -90,13 +90,22 @@ def preprocess_ocean_data():
             msk_cot = df_filtered['cot_mod08'].values
             msk_albedo = df_filtered['albedo'].values
 
-            # Compute cp albedo using shared cot_to_albedo
-            albedo_cp = cot_to_albedo(
-                ret_cot, 'sbdart',
-                sza=df_filtered['sza'].values,
-                table_folder='cp',
-                ocean=ocean, season=df_filtered['season'].values
-            )
+            # Compute cp albedo per season.
+            # Important: cot_to_albedo expects season to be a scalar season name here.
+            # Passing the full season array can make cp_albedo become all NaN.
+            albedo_cp = np.full(len(df_filtered), np.nan, dtype=float)
+            for s_name in season_dict.keys():
+                s_mask = (df_filtered['season'] == s_name)
+                if s_mask.sum() == 0:
+                    continue
+
+                albedo_cp[s_mask.values] = cot_to_albedo(
+                    ret_cot[s_mask.values], 'sbdart',
+                    sza=df_filtered.loc[s_mask, 'sza'].values,
+                    table_folder='cp',
+                    ocean=ocean,
+                    season=s_name
+                )
 
             # Compute dcp albedo using shared cot_to_albedo (fixed SZA=54.7)
             albedo_dcp = cot_to_albedo(
@@ -256,7 +265,7 @@ def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data
     """
     Compute the SZA correction (daytime-mean minus 10:30) for k and lnb
     from the SBDART lookup table.
-    
+
     Returns:
         diff_k, diff_b: DataFrames (index=Ocean, columns=Season) with SZA corrections (additive)
         ratio_k, ratio_b: DataFrames (index=Ocean, columns=Season) with SZA ratios (multiplicative)
@@ -270,10 +279,6 @@ def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data
         od = all_processed_ocean_data[ocean]
         if od is None:
             continue
-
-        ret_cot = od['ret_cot']
-        season_arr = od['season']
-        sza_arr = od['sza']
 
         for season in SEASONS:
             mean_sza_deg = seasonal_stats[(ocean, season)]
@@ -298,7 +303,7 @@ def compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data
 
 
 def main():
-    # Step 1: Preprocess data and compute 10:30 coefficients (from 5_cal_albedo_sensitivity.py)
+    # Step 1: Preprocess data and compute 10:30 coefficients
     all_processed_ocean_data = preprocess_ocean_data()
 
     # Compute fits for each Method x Ocean x Season
@@ -336,8 +341,9 @@ def main():
 
     coef_df = pd.DataFrame(fit_records)
 
-    # Step 2: Compute SZA correction for daytime-mean coefficients
-    print("\nComputing SZA correction for daytime-mean coefficients...")
+    # Step 2: Compute SZA correction only for methods that need daytime-mean coefficients.
+    # cp and dcp will keep only the 10:30 coefficients in the output table.
+    print("\nComputing SZA correction for ret/msk daytime-mean coefficients...")
     seasonal_stats = calculate_seasonal_stats(oceans, input_dir)
     weight_dict = load_weighted_angles(WEIGHTED_FILE)
     diff_k, diff_b, ratio_k, ratio_b = \
@@ -346,9 +352,11 @@ def main():
     # Switch: True = use multiplicative ratio, False = use additive difference
     USE_RATIO = True
 
-    # Step 3: Build output CSV with both 10:30 and daytime-mean coefficients
+    # Step 3: Build output CSV.
+    # ret and msk: write both 10:30 and daytime-mean coefficients.
+    # cp and dcp: write only 10:30 coefficients; daytime columns remain NaN.
     output_records = []
-    for method in ['ret', 'msk']:
+    for method in method_keys:
         mdf = coef_df[coef_df['Method'] == method]
         for _, row in mdf.iterrows():
             ocean = row['Ocean']
@@ -358,24 +366,31 @@ def main():
             k_1030_unc = row['Slope_Unc']
             b_1030_unc = row['Intercept_Unc']
 
-            if USE_RATIO:
-                # Multiplicative correction: multiply by ratio
-                rk = ratio_k.loc[ocean, season] if np.isfinite(ratio_k.loc[ocean, season]) else 1
-                rb = ratio_b.loc[ocean, season] if np.isfinite(ratio_b.loc[ocean, season]) else 1
-                k_daytime = k_1030 * rk if np.isfinite(k_1030) else np.nan
-                b_daytime = b_1030 * rb if np.isfinite(b_1030) else np.nan
-                # Uncertainty also multiplied by ratio
-                k_daytime_unc = k_1030_unc * rk if np.isfinite(k_daytime) else np.nan
-                b_daytime_unc = b_1030_unc * rb if np.isfinite(b_daytime) else np.nan
+            if method in ['cp', 'dcp']:
+                k_daytime = np.nan
+                b_daytime = np.nan
+                k_daytime_unc = np.nan
+                b_daytime_unc = np.nan
+
             else:
-                # Additive correction: add difference
-                dk = diff_k.loc[ocean, season] if np.isfinite(diff_k.loc[ocean, season]) else 0
-                db = diff_b.loc[ocean, season] if np.isfinite(diff_b.loc[ocean, season]) else 0
-                k_daytime = k_1030 + dk if np.isfinite(k_1030) else np.nan
-                b_daytime = b_1030 + db if np.isfinite(b_1030) else np.nan
-                # Uncertainty unchanged (dk/db from lookup table without uncertainty)
-                k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
-                b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
+                if USE_RATIO:
+                    # Multiplicative correction: multiply by ratio
+                    rk = ratio_k.loc[ocean, season] if np.isfinite(ratio_k.loc[ocean, season]) else 1
+                    rb = ratio_b.loc[ocean, season] if np.isfinite(ratio_b.loc[ocean, season]) else 1
+                    k_daytime = k_1030 * rk if np.isfinite(k_1030) else np.nan
+                    b_daytime = b_1030 * rb if np.isfinite(b_1030) else np.nan
+                    # Uncertainty also multiplied by ratio
+                    k_daytime_unc = k_1030_unc * rk if np.isfinite(k_daytime) else np.nan
+                    b_daytime_unc = b_1030_unc * rb if np.isfinite(b_daytime) else np.nan
+                else:
+                    # Additive correction: add difference
+                    dk = diff_k.loc[ocean, season] if np.isfinite(diff_k.loc[ocean, season]) else 0
+                    db = diff_b.loc[ocean, season] if np.isfinite(diff_b.loc[ocean, season]) else 0
+                    k_daytime = k_1030 + dk if np.isfinite(k_1030) else np.nan
+                    b_daytime = b_1030 + db if np.isfinite(b_1030) else np.nan
+                    # Uncertainty unchanged (dk/db from lookup table without uncertainty)
+                    k_daytime_unc = k_1030_unc if np.isfinite(k_daytime) else np.nan
+                    b_daytime_unc = b_1030_unc if np.isfinite(b_daytime) else np.nan
 
             output_records.append({
                 'Method': method,

@@ -110,11 +110,11 @@ def plot_legend_only():
 
 
 if __name__ == "__main__":
-    # Read new CSV format: Method, Ocean, Season, Slope, Intercept, Slope_Unc, Intercept_Unc
-    df = pd.read_csv('/home/chenyiqi/251028_albedo_cot/processed_data/coef_k_b.csv')
+    # Read CSV format: Method, Ocean, Season, Slope_1030, Intercept_1030, Slope_1030_Unc, Intercept_1030_Unc
+    df = pd.read_csv('/home/chenyiqi/251028_albedo_cot/processed_data/sensitivity_albedo_vs_cot_ratio.csv')
 
     # Compute annual slope as mean of 4 seasons for each method-ocean
-    df_annual = df.groupby(['Method', 'Ocean'], as_index=False)['Slope'].mean()
+    df_annual = df.groupby(['Method', 'Ocean'], as_index=False)['Slope_1030'].mean()
 
     for ocean in oceans:
         ocean_rows = df_annual[df_annual['Ocean'] == ocean]
@@ -122,10 +122,19 @@ if __name__ == "__main__":
             print(f"Warning: {ocean} not found, skipping.")
             continue
 
-        k_dcp = ocean_rows.loc[ocean_rows['Method'] == 'dcp', 'Slope'].values[0]
-        k_cp  = ocean_rows.loc[ocean_rows['Method'] == 'cp', 'Slope'].values[0]
-        k_ret = ocean_rows.loc[ocean_rows['Method'] == 'ret', 'Slope'].values[0]
-        k_msk = ocean_rows.loc[ocean_rows['Method'] == 'msk', 'Slope'].values[0]
+        k_dcp = ocean_rows.loc[ocean_rows['Method'] == 'dcp', 'Slope_1030'].values
+        k_cp  = ocean_rows.loc[ocean_rows['Method'] == 'cp', 'Slope_1030'].values
+        k_ret = ocean_rows.loc[ocean_rows['Method'] == 'ret', 'Slope_1030'].values
+        k_msk = ocean_rows.loc[ocean_rows['Method'] == 'msk', 'Slope_1030'].values
+
+        if len(k_dcp) == 0 or len(k_cp) == 0 or len(k_ret) == 0 or len(k_msk) == 0:
+            print(f"Warning: {ocean} missing one or more methods, skipping.")
+            continue
+
+        k_dcp = k_dcp[0]
+        k_cp  = k_cp[0]
+        k_ret = k_ret[0]
+        k_msk = k_msk[0]
 
         delta1 = 1 - k_dcp
         delta2 = k_dcp - k_cp
@@ -139,5 +148,3 @@ if __name__ == "__main__":
     plot_legend_only()
 
     print("Pie charts saved.")
-
-

@@ -513,7 +513,7 @@ def main():
     as_keys = ['as_ret_day', 'as_ret_1030', 'as_msk_day', 'as_msk_1030', 'as_orig']
     # Legend: subscript content outside parentheses, shared between subplots
     as_legend_labels = ['Ret, Day', 'Ret, 10:30', 'Msk, Day', 'Msk, 10:30', 'Uncorr.']
-    as_colors = ['steelblue', 'lightblue', 'firebrick', 'lightcoral', 'lightgray']
+    as_colors = ['steelblue', 'lightblue', 'firebrick', 'lightcoral', 'gainsboro']
     
     for i, (key, label, color) in enumerate(zip(as_keys, as_legend_labels, as_colors)):
         if key == 'as_orig':
@@ -547,12 +547,16 @@ def main():
                          1 - left_margin - right_margin, bar_height])
     
     # irf_ret_orig and irf_msk_orig are different, keep as separate bars (6 total)
-    irf_keys = ['irf_ret_day', 'irf_ret_1030', 'irf_ret_orig',
-                'irf_msk_day', 'irf_msk_1030', 'irf_msk_orig']
-    irf_legend_labels = ['Ret, Day', 'Ret, 10:30', 'Ret, Uncorr.',
-                         'Msk, Day', 'Msk, 10:30', 'Msk, Uncorr.']
-    irf_colors = ['steelblue', 'lightblue', 'lightcyan',
-                  'firebrick', 'lightcoral', 'mistyrose']
+    # Order: day (left), 1030 (middle), uncorr (right)
+    irf_keys = ['irf_ret_day', 'irf_msk_day',
+                'irf_ret_1030', 'irf_msk_1030',
+                'irf_ret_orig', 'irf_msk_orig']
+    irf_legend_labels = ['Ret, Day', 'Msk, Day',
+                         'Ret, 10:30', 'Msk, 10:30',
+                         'Ret, Uncorr.', 'Msk, Uncorr.']
+    irf_colors = ['steelblue', 'firebrick',
+                  'lightblue', 'lightcoral',
+                  'lightcyan', 'mistyrose']
     
     for i, (key, label, color) in enumerate(zip(irf_keys, irf_legend_labels, irf_colors)):
         means = [bar_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]
@@ -581,12 +585,16 @@ def main():
                          1 - left_margin - right_margin, bar_height])
     
     # erf_ret_orig and erf_msk_orig are different, keep as separate bars (6 total)
-    erf_keys = ['erf_ret_day', 'erf_ret_1030', 'erf_ret_orig',
-                'erf_msk_day', 'erf_msk_1030', 'erf_msk_orig']
-    erf_legend_labels = ['Ret, Day', 'Ret, 10:30', 'Ret, Uncorr.',
-                         'Msk, Day', 'Msk, 10:30', 'Msk, Uncorr.']
-    erf_colors = ['steelblue', 'lightblue', 'lightcyan',
-                  'firebrick', 'lightcoral', 'mistyrose']
+    # Order: day (left), 1030 (middle), uncorr (right)
+    erf_keys = ['erf_ret_day', 'erf_msk_day',
+                'erf_ret_1030', 'erf_msk_1030',
+                'erf_ret_orig', 'erf_msk_orig']
+    erf_legend_labels = ['Ret, Day', 'Msk, Day',
+                         'Ret, 10:30', 'Msk, 10:30',
+                         'Ret, Uncorr.', 'Msk, Uncorr.']
+    erf_colors = ['steelblue', 'firebrick',
+                  'lightblue', 'lightcoral',
+                  'lightcyan', 'mistyrose']
     
     for i, (key, label, color) in enumerate(zip(erf_keys, erf_legend_labels, erf_colors)):
         means = [bar_results[key].get(o, (np.nan, np.nan))[0] for o in ocean_names]

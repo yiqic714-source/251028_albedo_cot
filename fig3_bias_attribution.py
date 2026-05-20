@@ -501,7 +501,7 @@ def plot_4panels(icon_style='nature'):
         ax3,
         data=[cot_disp_ratios, aod_cot_ratios],
         labels=[r'High $d_{\mathrm{COT}}$ / Low $d_{\mathrm{COT}}$', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
+        ylabel=r'Ratio of  $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
     )
     ax3.set_title(format_panel_tag(3, icon_style), fontsize=15, loc='left')
 
@@ -510,7 +510,7 @@ def plot_4panels(icon_style='nature'):
         ax4,
         data=[unr_fra_ratios, aod_unr_ratios],
         labels=['High TZF / Low TZF', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
+        ylabel=r'Ratio of  $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
     ax4.set_title(format_panel_tag(4, icon_style), fontsize=15, loc='left')
 
