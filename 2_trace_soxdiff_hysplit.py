@@ -40,7 +40,7 @@ def _satellite_config(satellite_name: str) -> tuple[float, str]:
 
 
 TARGET_LST_HOUR, LST_TAG = _satellite_config(SATELLITE_NAME)
-RUN_HOURS = -20
+RUN_HOURS = -17
 CONTROL_HEIGHT = 1000.0
 PARTICLE_INDEX_START = 1
 PARTICLE_INDEX_END = 'all'
@@ -531,8 +531,11 @@ def main() -> None:
 		NPZ_PATH,
 		target_date.month,
 	)
+	launch_points_all = [pt for pt in run_points_all if abs(float(pt[0])) < 60.0]
+	if not launch_points_all:
+		raise ValueError('No launch points remain after applying latitude filter: |lat| < 60.')
 	run_points, selected_start, selected_end = select_particle_range(
-		run_points_all,
+		launch_points_all,
 		start_1based=PARTICLE_INDEX_START,
 		end_1based=PARTICLE_INDEX_END,
 	)
@@ -544,6 +547,7 @@ def main() -> None:
 
 	# print(f'TARGET_LST_HOUR: {TARGET_LST_HOUR}')
 	print(f'Finite SOx-diff particles in NPZ (month={target_date.month}): {len(run_points_all)}')
+	print(f'Launch particles after latitude filter (lat < 60): {len(launch_points_all)}')
 	print(f'Selected particle range (1-based, inclusive): {selected_start}..{selected_end}')
 	# print(f'Using run_hours={RUN_HOURS}')
 
@@ -604,7 +608,7 @@ def main() -> None:
 				}
 			)
 	write_results_csv(saved_rows, result_csv_path)
-	# plot_kept_t0_positions(kept_t0_records, kept_t0_png)
+	plot_kept_t0_positions(kept_t0_records, kept_t0_png)
 
 	print(f'Saved CSV: {result_csv_path}')
 	print(f'Kept particles: {kept_particles}/{total_particles_simulated}')

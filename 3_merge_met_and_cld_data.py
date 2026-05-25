@@ -36,8 +36,10 @@ MOD_VARS = {
 	'Cloud_Effective_Radius_Liquid_Mean': 'cer_mod08',
 	'Cloud_Retrieval_Fraction_Combined': 'cf_ret_combined_mod08',
 	'Aerosol_Optical_Depth_Land_Ocean_Mean': 'aod_mod08',
-	'Solar_Zenith_Mean': 'sza_mod08',
-	'Solar_Azimuth_Mean': 'saa_mod08',
+	'Sensor_Zenith_Mean': 'ssza_mod08',
+	'Sensor_Azimuth_Mean': 'ssaa_mod08',
+	'Solar_Zenith_Mean': 'slza_mod08',
+	'Solar_Azimuth_Mean': 'slaa_mod08',
 }
 
 def parse_target_date_from_argv(argv: list[str]) -> dt.date:
@@ -121,24 +123,11 @@ def attach_mod_values(point_df: pd.DataFrame, mod_data: dict, lat_col: str, lon_
 	out_df = out_df.drop(columns=['mod_lat', 'mod_lon'])
 	return out_df
 
-
-def _to_dataset_lon_value(ds_lon: np.ndarray, point_lon: float) -> float:
-	if np.nanmax(ds_lon) > 180 and point_lon < 0:
-		return point_lon + 360.0
-	if np.nanmax(ds_lon) <= 180 and point_lon > 180:
-		return point_lon - 360.0
-	return point_lon
-
-
 def _to_dataset_lon_values(ds_lon: np.ndarray, point_lons: np.ndarray) -> np.ndarray:
 	point_lons = np.asarray(point_lons, dtype=float)
 	if np.nanmax(ds_lon) > 180:
 		return np.where(point_lons < 0, point_lons + 360.0, point_lons)
 	return np.where(point_lons > 180, point_lons - 360.0, point_lons)
-
-
-def _nearest_index(values: np.ndarray, target: float) -> int:
-	return int(np.abs(values - target).argmin())
 
 
 def _nearest_indices(values: np.ndarray, targets: np.ndarray) -> np.ndarray:
@@ -269,7 +258,7 @@ def extract_era5_for_t0_points(mod_df: pd.DataFrame, target_date: dt.date) -> pd
 if __name__ == "__main__":
 	target_date = parse_target_date_from_argv(sys.argv)
 	input_csv = find_soxdiff_track_csv(target_date)
-	output_csv = PROCESSED_DATA_DIR / f'ml_xy_data0407/{target_date:%Y}/soxdiff_met_and_cld_{target_date:%Y%m%d}{LST_TAG}.csv'
+	output_csv = PROCESSED_DATA_DIR / f'ml_xy_data/{target_date:%Y}/soxdiff_met_and_cld_{target_date:%Y%m%d}{LST_TAG}.csv'
 
 	mod_file = find_mod08_file_for_date(target_date, MOD08_DIR)
 	affected_df = pd.read_csv(input_csv)

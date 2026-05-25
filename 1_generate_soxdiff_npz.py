@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import netCDF4 as nc
 import matplotlib.pyplot as plt
+from scipy.spatial import cKDTree
 from matplotlib.colors import LogNorm, Normalize
 from matplotlib import gridspec
 import cartopy.crs as ccrs
@@ -29,6 +30,16 @@ OUT_DIFF_NPZ = os.path.join(
 	f'processed_data/soxdiff_monthly_{YEAR_B}m{YEAR_A}.npz'
 )
 OCEAN_MASK_1DEG = None
+
+
+def _latlon_to_unit_xyz(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+	lat_rad = np.deg2rad(lat_deg.astype(float))
+	lon_rad = np.deg2rad(lon_deg.astype(float))
+	clat = np.cos(lat_rad)
+	x = clat * np.cos(lon_rad)
+	y = clat * np.sin(lon_rad)
+	z = np.sin(lat_rad)
+	return np.column_stack([x, y, z])
 
 
 def _build_output_paths(year_a, year_b, month):
@@ -76,16 +87,8 @@ def _aggregate_to_1deg(df, year, month):
 	return data, grid_sum
 
 
-def _add_gridlines(ax):
-	gl = ax.gridlines(draw_labels=True, linewidth=0.4, linestyle='--', alpha=0.35)
-	# Keep labels only on left and bottom to avoid duplicated labels on top/right.
-	gl.top_labels = False
-	gl.right_labels = False
-	return gl
-
-
 def _build_ocean_mask_1deg():
-	"""Build 1x1 degree ocean mask from LSMASK file, excluding |lat| > 60."""
+	"""Build 1x1 degree ocean mask from LSMASK and remove coastal ocean cells (<300 km)."""
 	with nc.Dataset(LSMASK_PATH, 'r') as ds:
 		lat_lsm = ds.variables['lat'][:].astype(float)
 		lon_lsm = ds.variables['lon'][:].astype(float)
@@ -105,8 +108,6 @@ def _build_ocean_mask_1deg():
 		lat_grid = np.hstack([lat_grid[:, half_width:], lat_grid[:, :half_width]])
 
 	ocean_native = ~land_mask
-	polar_rows = (lat_grid[:, 0] > 60.0) | (lat_grid[:, 0] < -60.0)
-	ocean_native[polar_rows, :] = False
 
 	lat_native = lat_grid[:, 0]
 	lon_native = lon_grid[0, :]
@@ -118,7 +119,28 @@ def _build_ocean_mask_1deg():
 	lon_idx = lon_dist.argmin(axis=0)
 
 	ocean_mask_1deg = ocean_native[np.ix_(lat_idx, lon_idx)]
-	ocean_mask_1deg[(lat_centers < -60.0) | (lat_centers > 60.0), :] = False
+
+	# Remove ocean grid cells within 300 km of land.
+	lon2d, lat2d = np.meshgrid(lon_centers, lat_centers)
+	land_mask_1deg = ~ocean_mask_1deg
+	land_lat = lat2d[land_mask_1deg]
+	land_lon = lon2d[land_mask_1deg]
+
+	if land_lat.size > 0:
+		land_xyz = _latlon_to_unit_xyz(land_lat, land_lon)
+		tree = cKDTree(land_xyz)
+		ocean_lat = lat2d[ocean_mask_1deg]
+		ocean_lon = lon2d[ocean_mask_1deg]
+		ocean_xyz = _latlon_to_unit_xyz(ocean_lat, ocean_lon)
+		chord_dist, _ = tree.query(ocean_xyz, k=1)
+		clipped = np.clip(chord_dist / 2.0, 0.0, 1.0)
+		angle_rad = 2.0 * np.arcsin(clipped)
+		dist_km = 6371.0 * angle_rad
+
+		keep_ocean = np.zeros_like(ocean_mask_1deg, dtype=bool)
+		keep_ocean[ocean_mask_1deg] = dist_km >= 500.0
+		ocean_mask_1deg = keep_ocean
+
 	return ocean_mask_1deg
 
 
@@ -243,7 +265,9 @@ def plot_sox_difference(df, year_a, year_b, month, sox_grid_a, sox_grid_b, diff_
 	)
 	axes[0].add_feature(cfeature.LAND, facecolor='lightgray', edgecolor='none', zorder=2)
 	axes[0].coastlines(resolution='110m', linewidth=0.6, color='black', zorder=3)
-	_add_gridlines(axes[0])
+	gl0 = axes[0].gridlines(draw_labels=True, linewidth=0.4, linestyle='--', alpha=0.35)
+	gl0.top_labels = False
+	gl0.right_labels = False
 	axes[0].set_xlim(-180, 180)
 	axes[0].set_ylim(-90, 90)
 	axes[0].set_title(f'SOx Difference ({year_b}-{month:02d} minus {year_a}-{month:02d})')
@@ -259,7 +283,9 @@ def plot_sox_difference(df, year_a, year_b, month, sox_grid_a, sox_grid_b, diff_
 	)
 	axes[1].add_feature(cfeature.LAND, facecolor='lightgray', edgecolor='none', zorder=2)
 	axes[1].coastlines(resolution='110m', linewidth=0.6, color='black', zorder=3)
-	_add_gridlines(axes[1])
+	gl1 = axes[1].gridlines(draw_labels=True, linewidth=0.4, linestyle='--', alpha=0.35)
+	gl1.top_labels = False
+	gl1.right_labels = False
 	axes[1].set_xlim(-180, 180)
 	axes[1].set_ylim(-90, 90)
 	axes[1].set_title(f'SOx {year_b}-{month:02d}')
@@ -275,7 +301,9 @@ def plot_sox_difference(df, year_a, year_b, month, sox_grid_a, sox_grid_b, diff_
 	)
 	axes[2].add_feature(cfeature.LAND, facecolor='lightgray', edgecolor='none', zorder=2)
 	axes[2].coastlines(resolution='110m', linewidth=0.6, color='black', zorder=3)
-	_add_gridlines(axes[2])
+	gl2 = axes[2].gridlines(draw_labels=True, linewidth=0.4, linestyle='--', alpha=0.35)
+	gl2.top_labels = False
+	gl2.right_labels = False
 	axes[2].set_xlim(-180, 180)
 	axes[2].set_ylim(-90, 90)
 	axes[2].set_title(f'SOx {year_a}-{month:02d}')
