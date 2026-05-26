@@ -510,10 +510,13 @@ def main():
                          1 - left_margin - right_margin, bar_height])
     
     # as_ret_orig and as_msk_orig are identical, merge into one gray bar at the rightmost position
-    as_keys = ['as_ret_day', 'as_ret_1030', 'as_msk_day', 'as_msk_1030', 'as_orig']
+    as_keys = ['as_ret_day', 'as_msk_day',
+               'as_ret_1030', 'as_msk_1030', 'as_orig']
     # Legend: subscript content outside parentheses, shared between subplots
-    as_legend_labels = ['Ret, Day', 'Ret, 10:30', 'Msk, Day', 'Msk, 10:30', 'Uncorr.']
-    as_colors = ['steelblue', 'lightblue', 'firebrick', 'lightcoral', 'gainsboro']
+    as_legend_labels = ['Ret, Day', 'Msk, Day',
+                        'Ret, 10:30', 'Msk, 10:30', 'Uncorr.']
+    as_colors = ['steelblue', 'firebrick',
+                 'lightblue', 'lightcoral', 'whitesmoke']
     
     for i, (key, label, color) in enumerate(zip(as_keys, as_legend_labels, as_colors)):
         if key == 'as_orig':
