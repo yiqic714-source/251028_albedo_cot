@@ -12,6 +12,7 @@ import utils_uniform_fov as uft
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.colors as mcolors
+from utils_fitting import format_panel_tag
 
 # Set weight for each angle bin within CERES FOV
 wij = np.array([
@@ -149,15 +150,6 @@ def julian_to_datetime(julian_days):
     base_datetime = datetime(1970, 1, 1, 0, 0, 0)
     days_since_epoch = julian_days - base_julian
     return [base_datetime + timedelta(days=days) for days in days_since_epoch]
-
-
-def format_panel_tag(panel_idx, icon_style):
-    if icon_style == 'nature':
-        letter = chr(ord('A') + panel_idx)
-        return rf'$\mathbf{{{letter}}}$'
-
-    letter = chr(ord('a') + panel_idx)
-    return rf'$\mathbf{{({letter})}}$'
 
 
 # Calculate pixel weight for MODIS within CERES FOV

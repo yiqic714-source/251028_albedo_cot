@@ -235,7 +235,7 @@ def prepare_dataframe(ocean, season_name):
     )
 
     df['cot_disp'] = df['ret_cotstd_cer'] / df['ret_cot_cer']
-    df['unr_fra'] = 1 - df['cf_ret_liq_mod08'] - df['clr_fra']
+    df['unr_fra'] = df['cf_ceres'] - df['cf_ret_liq_mod08']
 
     mask = (
         (df['cf_ceres'] > MIN_CF) &
@@ -725,7 +725,7 @@ def main(icon_style='nature'):
     draw_two_boxplot(
         ax5,
         data=[unr_fra_ratios, aod_unr_ratios],
-        labels=['High TZF / Low TZF', 'High AOD / Low AOD'],
+        labels=['High URF / Low URF', 'High AOD / Low AOD'],
         ylabel=r'Ratio of  $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
     ax5.text(-0.01, 1.01, f'{format_panel_tag(4, icon_style)}',
