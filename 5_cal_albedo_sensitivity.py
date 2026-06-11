@@ -350,7 +350,7 @@ def main():
         compute_sza_correction(seasonal_stats, weight_dict, all_processed_ocean_data)
 
     # Switch: True = use multiplicative ratio, False = use additive difference
-    USE_RATIO = True
+    USE_RATIO = False
 
     # Step 3: Build output CSV.
     # ret and msk: write both 10:30 and daytime-mean coefficients.

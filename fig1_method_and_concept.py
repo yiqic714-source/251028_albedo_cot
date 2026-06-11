@@ -384,20 +384,23 @@ if __name__ == "__main__":
     )
 
     # =========================
-    # Create figure with new layout (3 panels A, B, C vertically)
-    # Panel C includes orange scatter from original panel D
+    # Create figure with new layout (2x2 grid)
+    # First two panels are blank with custom titles
+    # Panels 3 and 4 are Full Granule and Processed Grid
+    # Shared colorbar below the second row, spanning both columns
     # =========================
-    fig = plt.figure(figsize=(4.3, 12))
+    fig = plt.figure(figsize=(8, 7))
 
     gs = fig.add_gridspec(
-        3, 1,
-        hspace=0.23,
-        bottom=0.08, top=0.95
+        2, 2,
+        hspace=0.2, wspace=0.25,
+        bottom=0.12, top=0.95
     )
 
-    ax1 = fig.add_subplot(gs[0, 0])  # (a) Data Domains
-    ax2 = fig.add_subplot(gs[1, 0])  # (b) Full Granule
-    ax3 = fig.add_subplot(gs[2, 0])  # (c) Processed Grid
+    ax1 = fig.add_subplot(gs[0, 0])  # (a) Blank: domains of variables in Eq. (3)
+    ax2 = fig.add_subplot(gs[0, 1])  # (b) Blank: data used to build Eq. (3)
+    ax3 = fig.add_subplot(gs[1, 0])  # (c) Full Granule
+    ax4 = fig.add_subplot(gs[1, 1])  # (d) Processed Grid
 
     from matplotlib.cm import ScalarMappable
 
@@ -412,25 +415,35 @@ if __name__ == "__main__":
     sm_cld_cbar.set_array([])
 
     # -------------------------
-    # (a) Data Domains
+    # (a) Blank: domains of variables in Eq. (3)
     # -------------------------
-    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}  Data Domain Illustration',
-             transform=ax1.transAxes, fontsize=15, va='bottom', ha='left')
+    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)} Variables in relationship',
+             transform=ax1.transAxes, fontsize=14, va='bottom', ha='left')
     ax1.set_xticks([])
     ax1.set_yticks([])
     for spine in ax1.spines.values():
         spine.set_visible(True)
 
     # -------------------------
-    # (b) Full Granule
+    # (b) Blank: data used to build Eq. (3)
     # -------------------------
-    ax2.scatter(lon_mod_full_invalid, lat_mod_full_invalid, s=0.04, c='lightgray',
+    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)} Data to build relationship',
+             transform=ax2.transAxes, fontsize=14, va='bottom', ha='left')
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    for spine in ax2.spines.values():
+        spine.set_visible(True)
+
+    # -------------------------
+    # (c) Full Granule
+    # -------------------------
+    ax3.scatter(lon_mod_full_invalid, lat_mod_full_invalid, s=0.04, c='lightgray',
                 marker='o', edgecolors='None')
-    sc1 = ax2.scatter(lon_mod_full, lat_mod_full, s=0.04, c=cld_type_full,
+    sc1 = ax3.scatter(lon_mod_full, lat_mod_full, s=0.04, c=cld_type_full,
                       marker='o', cmap=cmap_cld, norm=norm, edgecolors='None')
-    ax2.grid(True, linestyle='--', alpha=0.5)
-    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}  Full Granule',
-             transform=ax2.transAxes, fontsize=15, va='bottom', ha='left')
+    ax3.grid(True, linestyle='--', alpha=0.5)
+    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)} Full granule',
+             transform=ax3.transAxes, fontsize=14, va='bottom', ha='left')
 
     rect = patches.Rectangle(
         (lon_min, lat_min),
@@ -440,10 +453,10 @@ if __name__ == "__main__":
         edgecolor='blue',
         facecolor='none'
     )
-    ax2.add_patch(rect)
+    ax3.add_patch(rect)
 
     # Customize longitude ticks for full granule
-    lon_ticks_full = ax2.get_xticks()
+    lon_ticks_full = ax3.get_xticks()
     lon_tick_labels_full = []
     for lon in lon_ticks_full:
         if not np.isnan(lon):
@@ -455,10 +468,10 @@ if __name__ == "__main__":
                 lon_tick_labels_full.append("0°")
         else:
             lon_tick_labels_full.append("")
-    ax2.set_xticklabels(lon_tick_labels_full, fontsize=9)
+    ax3.set_xticklabels(lon_tick_labels_full, fontsize=9)
 
     # Customize latitude ticks for full granule
-    lat_ticks_full = ax2.get_yticks()
+    lat_ticks_full = ax3.get_yticks()
     lat_tick_labels_full = []
     for lat in lat_ticks_full:
         if not np.isnan(lat):
@@ -470,31 +483,31 @@ if __name__ == "__main__":
                 lat_tick_labels_full.append("0°")
         else:
             lat_tick_labels_full.append("")
-    ax2.set_yticklabels(lat_tick_labels_full, fontsize=9)
+    ax3.set_yticklabels(lat_tick_labels_full, fontsize=9)
 
     # -------------------------
-    # (c) Processed Grid with orange FOSRs overlay (from original panel D)
+    # (d) Processed Grid with black FOSRs overlay
     # -------------------------
-    ax3.scatter(lon_mod_regional_invalid, lat_mod_regional_invalid, s=8, c='lightgray',
+    ax4.scatter(lon_mod_regional_invalid, lat_mod_regional_invalid, s=8, c='lightgray',
                 marker='o', edgecolors='None')
-    sc2 = ax3.scatter(lon_mod, lat_mod, c=cld_type, s=8, marker='o',
+    sc2 = ax4.scatter(lon_mod, lat_mod, c=cld_type, s=8, marker='o',
                       cmap=cmap_cld, norm=norm, edgecolors='None')
     
-    # Add orange scatter points from original panel (d) onto panel (c)
+    # Add black scatter points for CERES FOV centers
     if center_latlon is not None and len(center_latlon) > 0:
-        ax3.scatter(center_latlon[:, 1], center_latlon[:, 0],
+        ax4.scatter(center_latlon[:, 1], center_latlon[:, 0],
                     c='black', s=18, marker='o', zorder=5)
         
     
-    ax3.set_xlim(grid_window[1])
-    ax3.set_ylim(grid_window[0])
-    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}  Processed Grid',
-             transform=ax3.transAxes, fontsize=15, va='bottom', ha='left')
+    ax4.set_xlim(grid_window[1])
+    ax4.set_ylim(grid_window[0])
+    ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)} Processed grid',
+             transform=ax4.transAxes, fontsize=14, va='bottom', ha='left')
 
     lon_start = grid_window[1][0]
     lon_end = grid_window[1][1]
     lon_ticks_reg = np.arange(lon_start, lon_end + 0.01, 0.3)
-    ax3.set_xticks(lon_ticks_reg)
+    ax4.set_xticks(lon_ticks_reg)
 
     lon_tick_labels_reg = []
     for lon in lon_ticks_reg:
@@ -507,9 +520,9 @@ if __name__ == "__main__":
                 lon_tick_labels_reg.append("0°")
         else:
             lon_tick_labels_reg.append("")
-    ax3.set_xticklabels(lon_tick_labels_reg, fontsize=9)
+    ax4.set_xticklabels(lon_tick_labels_reg, fontsize=9)
 
-    lat_ticks_reg = ax3.get_yticks()
+    lat_ticks_reg = ax4.get_yticks()
     lat_tick_labels_reg = []
     for lat in lat_ticks_reg:
         if not np.isnan(lat):
@@ -521,14 +534,14 @@ if __name__ == "__main__":
                 lat_tick_labels_reg.append("0°")
         else:
             lat_tick_labels_reg.append("")
-    ax3.set_yticklabels(lat_tick_labels_reg, fontsize=9)
+    ax4.set_yticklabels(lat_tick_labels_reg, fontsize=9)
 
     # -------------------------
-    # Colorbar for panels (b) and (c)
+    # Shared colorbar below the second row, spanning both columns
     # -------------------------
-    pos2 = ax2.get_position()
     pos3 = ax3.get_position()
-    cbar_ax1 = fig.add_axes([pos2.x0, pos3.y0 - 0.04, pos3.x1 - pos2.x0, 0.015])
+    pos4 = ax4.get_position()
+    cbar_ax1 = fig.add_axes([pos3.x0, pos3.y0 - 0.07, pos4.x1 - pos3.x0, 0.015])
     cbar1 = plt.colorbar(
         sm_cld_cbar,
         cax=cbar_ax1,
@@ -542,8 +555,8 @@ if __name__ == "__main__":
         'Unretrieved\nLiquid Cloud',
         'Retrieved\nLiquid Cloud',
         'Ice Cloud'
-    ], fontsize=9, rotation=60, ha='right')
-    cbar1.ax.tick_params(axis='x', pad=6)
+    ], fontsize=9.5, rotation=0, ha='center')
+    cbar1.ax.tick_params(axis='x', pad=4)
 
     # Adjust layout
     plt.tight_layout()
