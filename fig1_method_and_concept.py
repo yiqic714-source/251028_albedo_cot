@@ -223,7 +223,7 @@ def upscale_and_interpolate(lat, lon, solar_zenith, sensor_zenith, target_shape)
 # Main process
 if __name__ == "__main__":
     # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
-    icon_style = 'science'
+    icon_style = 'nature'
     if icon_style not in ('nature', 'science'):
         raise ValueError("icon_style must be 'nature' or 'science'.")
 
@@ -409,8 +409,8 @@ if __name__ == "__main__":
     # -------------------------
     # (a) Blank: domains of variables in Eq. (3)
     # -------------------------
-    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)} Variables in relationship',
-             transform=ax1.transAxes, fontsize=14, va='bottom', ha='left')
+    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)} Domains of variables',
+             transform=ax1.transAxes, fontsize=13.5, va='bottom', ha='left')
     ax1.set_xticks([])
     ax1.set_yticks([])
     for spine in ax1.spines.values():
@@ -419,8 +419,8 @@ if __name__ == "__main__":
     # -------------------------
     # (b) Blank: data used to build Eq. (3)
     # -------------------------
-    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)} Data to build relationship',
-             transform=ax2.transAxes, fontsize=14, va='bottom', ha='left')
+    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)} Data to build relationships',
+             transform=ax2.transAxes, fontsize=13.5, va='bottom', ha='left')
     ax2.set_xticks([])
     ax2.set_yticks([])
     for spine in ax2.spines.values():

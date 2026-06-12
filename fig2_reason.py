@@ -579,8 +579,8 @@ def main(icon_style='nature'):
     # ================================================================
     solid_labels = [
         'T91',
-        'Decoupled SBDART',
-        'Coupled SBDART',
+        'Decoupled Simu.',
+        'Coupled Simu.',
         'Retrieval-Domain Obs.',
         'Mask-Domain Obs.'
     ]
