@@ -41,10 +41,10 @@ def filter_merged_data(df):
 def build_points():
     """
     Build 8*4 ocean-season points with:
-      - k values from sensitivity CSV
+      - k values from sensitivity CSV (wide format)
       - unr_fra, cot_disp, sza from merged_data CSVs
     """
-    # Read sensitivity coefficients
+    # Read sensitivity coefficients (wide format: Ocean, Season, k_dcp, b_dcp, ...)
     coef_df = pd.read_csv(SENSITIVITY_CSV)
 
     rows = []
@@ -54,18 +54,16 @@ def build_points():
             # --- Get k values from sensitivity CSV ---
             ocean_season = coef_df[(coef_df['Ocean'] == ocean) & (coef_df['Season'] == season_name)]
 
-            k_dcp_row = ocean_season[ocean_season['Method'] == 'dcp']
-            k_cp_row = ocean_season[ocean_season['Method'] == 'cp']
-            k_ret_row = ocean_season[ocean_season['Method'] == 'ret']
-            k_msk_row = ocean_season[ocean_season['Method'] == 'msk']
-
-            if k_dcp_row.empty or k_cp_row.empty or k_ret_row.empty or k_msk_row.empty:
+            if ocean_season.empty:
                 continue
 
-            k_dcp = float(k_dcp_row['Slope'].values[0])
-            k_cp = float(k_cp_row['Slope'].values[0])
-            k_ret = float(k_ret_row['Slope'].values[0])
-            k_msk = float(k_msk_row['Slope'].values[0])
+            k_dcp = float(ocean_season['k_dcp'].values[0])
+            k_cp = float(ocean_season['k_cp'].values[0])
+            k_ret = float(ocean_season['k_ret'].values[0])
+            k_msk = float(ocean_season['k_msk'].values[0])
+
+            if not (np.isfinite(k_dcp) and np.isfinite(k_cp) and np.isfinite(k_ret) and np.isfinite(k_msk)):
+                continue
 
             k_cp_minus_k_ret = k_cp - k_ret
             k_dcp_minus_k_cp = k_dcp - k_cp

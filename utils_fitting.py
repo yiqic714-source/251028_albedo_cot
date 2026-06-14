@@ -42,6 +42,11 @@ def albedo_to_y(albedo):
     return np.log(albedo / (1 - albedo))
 
 
+def cot_k_b_to_albedo(cot, k, b):
+    """Corrected albedo: Ac = b * cot^k / (1 + b * cot^k)"""
+    return b * cot ** k / (1 + b * cot ** k)
+
+
 # ============================================================
 # Fitting helper functions
 # ============================================================

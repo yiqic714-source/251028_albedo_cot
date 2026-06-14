@@ -117,7 +117,7 @@ def plot_legend_only():
 
 
 if __name__ == "__main__":
-    # Read CSV format: Method, Ocean, Season, Slope, ...
+    # Read CSV format (wide): Ocean, Season, k_dcp, b_dcp, k_cp, b_cp, k_ret, b_ret, k_msk, b_msk, ...
     df = pd.read_csv('/home/chenyiqi/251028_albedo_cot/processed_data/sensitivity_albedo_vs_cot_1030.csv')
 
     for ocean in oceans:
@@ -133,20 +133,15 @@ if __name__ == "__main__":
                 print(f"Warning: {ocean} {season} not found, skipping this season.")
                 continue
 
-            k_dcp = season_rows.loc[season_rows['Method'] == 'dcp', 'Slope'].values
-            k_cp  = season_rows.loc[season_rows['Method'] == 'cp', 'Slope'].values
-            k_ret = season_rows.loc[season_rows['Method'] == 'ret', 'Slope'].values
-            k_msk = season_rows.loc[season_rows['Method'] == 'msk', 'Slope'].values
+            row = season_rows.iloc[0]
+            k_dcp = float(row['k_dcp'])
+            k_cp  = float(row['k_cp'])
+            k_ret = float(row['k_ret'])
+            k_msk = float(row['k_msk'])
 
-            if len(k_dcp) == 0 or len(k_cp) == 0 or len(k_ret) == 0 or len(k_msk) == 0:
-                print(f"Warning: {ocean} {season} missing one or more methods, skipping this season.")
+            if not (np.isfinite(k_dcp) and np.isfinite(k_cp) and np.isfinite(k_ret) and np.isfinite(k_msk)):
+                print(f"Warning: {ocean} {season} has NaN k values, skipping this season.")
                 continue
-
-            # Extract scalar values from arrays
-            k_dcp = float(k_dcp[0])
-            k_cp  = float(k_cp[0])
-            k_ret = float(k_ret[0])
-            k_msk = float(k_msk[0])
 
             delta1 = 1 - k_dcp
             delta2 = k_dcp - k_cp

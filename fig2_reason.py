@@ -16,13 +16,15 @@ import matplotlib.patches as mpatches
 
 from utils_fitting import (
     oceans, season_dict, cot_range, albedo_to_y,
-    cot_to_x, cot_to_albedo, mc_fit, format_panel_tag
+    cot_to_x, cot_to_albedo, mc_fit, format_panel_tag, cot_k_b_to_albedo
 )
 
 
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
 FIG_SAVE_PATH = f'{BASE_PATH}/figs/fig2_reason.png'
+SENSITIVITY_CSV_PATH = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_1030.csv'
 os.makedirs(os.path.dirname(FIG_SAVE_PATH), exist_ok=True)
+os.makedirs(os.path.dirname(SENSITIVITY_CSV_PATH), exist_ok=True)
 
 MIN_COT = 2.5
 MIN_CF = 0.1
@@ -103,11 +105,6 @@ def fit_k_b_in_logit_space(cot, albedo):
     k, b = np.polyfit(x[mask], y[mask], 1)
     return k, b
 
-
-def logit_fit_to_albedo(cot, k, b):
-    x = cot_to_x(np.asarray(cot, dtype=float))
-    y = k * x + b
-    return np.exp(y) / (1 + np.exp(y))
 
 
 def compute_sbdart_albedo_per_point(df, table_folder):
@@ -384,6 +381,82 @@ def draw_two_boxplot(ax, data, labels, ylabel):
 
 
 # ============================================================
+# Per-ocean-season fitting (from 5_cal_albedo_sensitivity_1030.py)
+# ============================================================
+
+def compute_per_ocean_season_fits(df):
+    """
+    Compute k, b for each method (dcp, cp, ret, msk) per ocean-season.
+    Returns a list of dicts for building a wide-format CSV.
+    """
+    print('Computing per-ocean-season fits...')
+    records = []
+
+    for ocean in oceans:
+        for season_name in season_dict.keys():
+            mask = (df['ocean'] == ocean) & (df['season'] == season_name)
+            sub = df[mask]
+            n_pts = len(sub)
+            if n_pts < 5:
+                records.append({
+                    'Ocean': ocean, 'Season': season_name,
+                    'k_dcp': np.nan, 'b_dcp': np.nan,
+                    'k_dcp_unc': np.nan, 'b_dcp_unc': np.nan,
+                    'k_cp': np.nan, 'lnb_cp': np.nan,
+                    'k_cp_unc': np.nan, 'lnb_cp_unc': np.nan,
+                    'k_ret': np.nan, 'b_ret': np.nan,
+                    'k_ret_unc': np.nan, 'b_ret_unc': np.nan,
+                    'k_msk': np.nan, 'b_msk': np.nan,
+                    'k_msk_unc': np.nan, 'b_msk_unc': np.nan,
+                })
+                continue
+
+            # dcp: fixed SZA=54.4
+            alb_dcp_os = cot_to_albedo(
+                sub['ret_cot_cer'].values, 'sbdart',
+                sza=54.4, table_folder='dcp'
+            )
+            k_dcp_os, lnb_dcp_os = fit_k_b_in_logit_space(sub['ret_cot_cer'].values, alb_dcp_os)
+
+            # cp: per-point SZA
+            alb_cp_os = cot_to_albedo(
+                sub['ret_cot_cer'].values, 'sbdart',
+                sza=sub['sza'].values, table_folder='cp',
+                ocean=ocean, season=season_name
+            )
+            k_cp_os, lnb_cp_os, k_cp_unc, lnb_cp_unc = mc_fit(
+                sub['ret_cot_cer'].values, alb_cp_os,
+                cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True
+            )
+
+            # ret
+            k_ret_os, lnb_ret_os, k_ret_unc, lnb_ret_unc = mc_fit(
+                sub['ret_cot_cer'].values, sub['ret_albedo'].values,
+                cot_std=0.10, albedo_std=0.13, n_mc=300, bootstrap=True
+            )
+
+            # msk
+            k_msk_os, lnb_msk_os, k_msk_unc, lnb_msk_unc = mc_fit(
+                sub['cot_mod08'].values, sub['albedo'].values,
+                cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True
+            )
+
+            records.append({
+                'Ocean': ocean, 'Season': season_name,
+                'k_dcp': k_dcp_os, 'lnb_dcp': lnb_dcp_os,
+                'k_dcp_unc': np.nan, 'lnb_dcp_unc': np.nan,
+                'k_cp': k_cp_os, 'lnb_cp': lnb_cp_os,
+                'k_cp_unc': k_cp_unc, 'lnb_cp_unc': lnb_cp_unc,
+                'k_ret': k_ret_os, 'lnb_ret': lnb_ret_os,
+                'k_ret_unc': k_ret_unc, 'lnb_ret_unc': lnb_ret_unc,
+                'k_msk': k_msk_os, 'lnb_msk': lnb_msk_os,
+                'k_msk_unc': k_msk_unc, 'lnb_msk_unc': lnb_msk_unc,
+            })
+
+    return records
+
+
+# ============================================================
 # Main plotting function
 # ============================================================
 
@@ -415,10 +488,10 @@ def main(icon_style='nature'):
     )
 
     print('Fitting k values...')
-    k_t91, b_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
-    k_dcp, b_dcp = fit_k_b_in_logit_space(df['ret_cot_cer'], alb_dcp)
+    k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
+    k_dcp, lnb_dcp = fit_k_b_in_logit_space(df['ret_cot_cer'], alb_dcp)
 
-    k_cp, b_cp, _, _ = mc_fit(
+    k_cp, lnb_cp, _, _ = mc_fit(
         df['ret_cot_cer'].values,
         df['cp_albedo'].values,
         cot_std=0.0,
@@ -427,7 +500,7 @@ def main(icon_style='nature'):
         bootstrap=True
     )
 
-    k_ret, b_ret, _, _ = mc_fit(
+    k_ret, lnb_ret, _, _ = mc_fit(
         df['ret_cot_cer'].values,
         df['ret_albedo'].values,
         cot_std=0.10,
@@ -436,7 +509,7 @@ def main(icon_style='nature'):
         bootstrap=True
     )
 
-    k_msk, b_msk, _, _ = mc_fit(
+    k_msk, lnb_msk, _, _ = mc_fit(
         df['cot_mod08'].values,
         df['albedo'].values,
         cot_std=0.10,
@@ -445,11 +518,11 @@ def main(icon_style='nature'):
         bootstrap=True
     )
 
-    alb_t91_fit = logit_fit_to_albedo(cot_range, k_t91, b_t91)
-    alb_dcp_fit = logit_fit_to_albedo(cot_range, k_dcp, b_dcp)
-    alb_cp_fit = logit_fit_to_albedo(cot_range, k_cp, b_cp)
-    alb_ret_fit = logit_fit_to_albedo(cot_range, k_ret, b_ret)
-    alb_msk_fit = logit_fit_to_albedo(cot_range, k_msk, b_msk)
+    alb_t91_fit = cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91))
+    alb_dcp_fit = cot_k_b_to_albedo(cot_range, k_dcp, np.exp(lnb_dcp))
+    alb_cp_fit = cot_k_b_to_albedo(cot_range, k_cp, np.exp(lnb_cp))
+    alb_ret_fit = cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret))
+    alb_msk_fit = cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk))
 
     # ---- Compute data for panels (b)-(e): bias attribution (from fig3_bias_attribution) ----
     print('Computing bias attribution data...')
@@ -731,7 +804,14 @@ def main(icon_style='nature'):
     ax5.text(-0.01, 1.01, f'{format_panel_tag(4, icon_style)}',
              transform=ax5.transAxes, fontsize=17, va='bottom', ha='left')
 
-    # Save
+    # ---- Compute per-ocean-season fits and save to CSV ----
+    os_records = compute_per_ocean_season_fits(df)
+    os_df = pd.DataFrame(os_records)
+    os_df = os_df.sort_values(['Ocean', 'Season']).reset_index(drop=True)
+    os_df.to_csv(SENSITIVITY_CSV_PATH, index=False)
+    print(f'Saved per-ocean-season fits to: {SENSITIVITY_CSV_PATH}')
+
+    # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')
     plt.close(fig)
 

@@ -1,11 +1,12 @@
 import os
-import math
-from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from utils_fitting import oceans, format_panel_tag
+from utils_solar import (
+    calc_monthly_swdown, calc_grid_cell_area, calc_Ac
+)
 
 # =========================
 # Paths and basic settings
@@ -27,59 +28,6 @@ SIZE_PARAMS = {
     'xylabel': 14,
     'legend': 12.5,
 }
-
-# Physical constants for SWdown calculation
-S0 = 1361.0  # Solar constant (W/m2)
-R_EARTH = 6371000  # Earth radius (meters)
-M2_TO_KM2 = 1e6
-
-# =========================
-# Solar geometry helpers
-# =========================
-
-def declination(n):
-    """Solar declination angle (radians) from day of year."""
-    return math.radians(23.45) * math.sin(2 * math.pi * (284 + n) / 365.0)
-
-def E_ext(n):
-    """Extraterrestrial solar irradiance (W/m2) from day of year."""
-    return S0 * (1 + 0.033 * math.cos(2 * math.pi * n / 365.0))
-
-def sunset_hour_angle(phi, delta):
-    """Sunset hour angle (radians) from latitude and declination."""
-    x = -math.tan(phi) * math.tan(delta)
-    return 0.0 if x >= 1 else math.pi if x <= -1 else math.acos(x)
-
-def H0_daily_mean(phi, n):
-    """Daily-mean TOA solar radiation (W/m2)."""
-    delta, E = declination(n), E_ext(n)
-    omega_s = sunset_hour_angle(phi, delta)
-    return (E / math.pi) * (math.cos(phi)*math.cos(delta)*math.sin(omega_s) + omega_s*math.sin(phi)*math.sin(delta))
-
-def calc_monthly_swdown(lat, year=2020, month=None):
-    """Monthly mean daily-mean SWdown for a given latitude."""
-    if pd.isna(lat) or pd.isna(month) or month is None:
-        return np.nan
-    try:
-        month = int(month)
-        lat = float(lat)
-        year = int(year)
-    except (ValueError, TypeError):
-        return np.nan
-    if not (1 <= month <= 12):
-        return np.nan
-    start = date(year, month, 1)
-    end = date(year, 12, 31) if month == 12 else date(year, month + 1, 1) - timedelta(days=1)
-    phi = math.radians(lat)
-    vals = [H0_daily_mean(phi, d.timetuple().tm_yday) for d in pd.date_range(start, end)]
-    return float(np.mean(vals)) if vals else np.nan
-
-def calc_grid_cell_area(lat, lon_res=1.0, lat_res=1.0):
-    """Grid cell area (km2) from latitude and resolution."""
-    lat1, lat2 = math.radians(lat - lat_res/2), math.radians(lat + lat_res/2)
-    dlon = math.radians(lon_res)
-    area_m2 = dlon * (math.sin(lat2) - math.sin(lat1)) * (R_EARTH ** 2)
-    return area_m2 / M2_TO_KM2
 
 # =========================
 # Data loading
@@ -124,11 +72,6 @@ def load_cf_sensitivity(method):
     df['Ocean'] = df['Ocean'].str.strip()
     df['Season'] = df['Season'].str.strip()
     return df
-
-
-def calc_Ac(b, k, cot):
-    """Corrected albedo: Ac = b * cot^k / (1 + b * cot^k)"""
-    return b * cot ** k / (1 + b * cot ** k)
 
 
 def calc_ac_sensitivity(k, Ac):
