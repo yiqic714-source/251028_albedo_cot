@@ -13,11 +13,11 @@ os.makedirs(FIG_DIR, exist_ok=True)
 
 # Color palette for 5-segment pie chart (same as fig3_pie_plt.py)
 colors = [
-    (1.0, 0.8, 0.8),      # delta1: 1 - k_dcp
-    (1.0, 0.4, 0.4),      # delta2: k_dcp - k_cp
-    (0.8, 0.0, 0.0),      # delta3: k_cp - k_ret
-    (0.6, 0.78, 0.95),    # delta4: k_ret - k_msk
-    (0.05, 0.42, 0.85)    # k_msk
+    (0.72, 0.78, 0.86),   # delta1: 1 - k_dcp, soft gray-blue
+    (0.00, 0.75, 1.00),   # delta2: k_dcp - k_cp, bright sky blue
+    (0.34, 0.30, 1.00),   # delta3: k_cp - k_ret, vivid blue-purple
+    (1.00, 0.52, 0.18),   # delta4: k_ret - k_msk, bright orange
+    (0.95, 0.05, 0.22)    # k_msk, vivid red-pink
 ]
 
 # Labels for the 5 components

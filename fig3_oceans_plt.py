@@ -2,7 +2,8 @@ import os
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.patches import Polygon
+from shapely.geometry import box
+from shapely.ops import unary_union
 
 # Define ocean regions with coordinates (west, south, east, north)
 oceans = {
@@ -58,58 +59,91 @@ def format_panel_tag(panel_idx, icon_style):
     return rf'$\mathbf{{({letter})}}$'
 
 
-if __name__ == "__main__":
-    # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
+def draw_ocean_boundary(ax, regions, color='0.25', linestyle='-', linewidth=1.1):
+    """
+    Merge all rectangles belonging to one ocean and draw only the outer boundary.
+    Internal boundaries between adjacent rectangles are removed by unary_union.
+    """
+    rects = []
+    for west, south, east, north in regions:
+        rects.append(box(west, south, east, north))
 
-    # Create figure and axis with PlateCarree projection
+    merged = unary_union(rects)
+
+    if merged.geom_type == 'Polygon':
+        geoms = [merged]
+    elif merged.geom_type == 'MultiPolygon':
+        geoms = list(merged.geoms)
+    else:
+        geoms = []
+
+    for geom in geoms:
+        x, y = geom.exterior.xy
+        ax.plot(
+            x, y,
+            color=color,
+            linewidth=linewidth,
+            linestyle=linestyle,
+            transform=ccrs.PlateCarree(),
+            zorder=3
+        )
+
+
+if __name__ == "__main__":
     fig = plt.figure(figsize=(10.5, 4))
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
 
-    # Add map features
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.8, color='black')
-    ax.add_feature(cfeature.OCEAN, color='white')
+    # Background
+    ax.add_feature(cfeature.OCEAN, facecolor='white', zorder=0)
 
-    # pick 11 colors
-    cmap_colors = ["#F0F0F0", "#D0D0D0", "#C0C0C0", "#E8E8E8", "#E0E0E0", "#D8D8D8", "#F8F8F8", "#C8C8C8"]
-    ocean_color_map = {ocean: cmap_colors[i % len(cmap_colors)] for i, ocean in enumerate(oceans)}
-
+    # Draw only ocean outer boundaries
     for ocean, regions in oceans.items():
-        color = ocean_color_map.get(ocean, (0.5, 0.5, 0.5))
+        draw_ocean_boundary(
+            ax,
+            regions,
+            color='m',
+            linestyle='-',
+            linewidth=1
+        )
 
-        for (west, south, east, north) in regions:
-            # construct polygon vertices
-            poly_xy = [
-                (west, south),
-                (west, north),
-                (east, north),
-                (east, south)
-            ]
+    # Land mask above boundaries, so lines over land are hidden
+    ax.add_feature(
+        cfeature.LAND,
+        facecolor='white',
+        edgecolor='black',
+        linewidth=0.5,
+        zorder=4
+    )
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.8, color='black', zorder=5)
 
-            polygon = Polygon(
-                poly_xy,
-                facecolor=color,
-                edgecolor='none',
-                linewidth=0.6,
-                alpha=1,
-                transform=ccrs.PlateCarree(),
-                zorder=1
-            )
-            ax.add_patch(polygon)
-
-    # land edge
-    ax.add_feature(cfeature.LAND, facecolor='white', edgecolor='black', linewidth=0.5, zorder=2)
-    # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
     ax.set_title(format_panel_tag(0, 'nature'), fontsize=16, loc='left')
     ax.set_extent([-180, 180, -60, 60], crs=ccrs.PlateCarree())
-    
+
     # Gridlines
-    gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', linestyle='--', alpha=0.0, )
+    gl = ax.gridlines(
+        draw_labels=True,
+        linewidth=0.5,
+        color='gray',
+        linestyle='--',
+        alpha=0.0
+    )
     gl.top_labels = False
     gl.right_labels = False
     gl.xlabel_style = {'size': 10}
     gl.ylabel_style = {'size': 10}
 
-    # save figure
+        # Put axes/frame lines above ocean boundaries
+    for spine in ax.spines.values():
+        spine.set_zorder(20)
+        spine.set_linewidth(1.0)
+        spine.set_edgecolor('black')
+
+    # For Cartopy GeoAxes, the map frame is usually the "geo" spine
+    if 'geo' in ax.spines:
+        ax.spines['geo'].set_zorder(20)
+        ax.spines['geo'].set_linewidth(1.0)
+        ax.spines['geo'].set_edgecolor('black')
+
     out_dir = 'figs'
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, 'fig3_division_8oceans.png')

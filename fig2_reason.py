@@ -29,9 +29,31 @@ os.makedirs(os.path.dirname(SENSITIVITY_CSV_PATH), exist_ok=True)
 MIN_COT = 2.5
 MIN_CF = 0.1
 
-LINECOLOR = ['steelblue', 'orange', 'coral', 'red', 'purple']
+# ============================================================
+# Unified color scheme
+# Panel (a) five main colors:
+#   T91: black
+#   DCP: green  (swapped with CP as requested)
+#   CP : blue   (swapped with DCP as requested)
+#   RET: orange-yellow
+#   MSK: red-brown
+# Panels (b)/(c) reuse the same colors whenever the same physical line appears.
+# Auxiliary decomposition lines use high-contrast colors not used by panel (a).
+# ============================================================
+T91_COLOR = '#222222'
+DCP_COLOR = '#009E73'
+CP_COLOR = '#0072B2'
+RET_COLOR = '#E69F00'
+MSK_COLOR = '#8C564B'
+
+AUX_VS_COLOR = '#CC79A7'
+AUX_SURFACE_COLOR = '#7F3C8D'
+AUX_GAS_COLOR = '#D55E00'
+AUX_SZA_COLOR = '#56B4E9'
+
+PANEL_A_COLORS = [T91_COLOR, DCP_COLOR, CP_COLOR, RET_COLOR, MSK_COLOR]
 LINESTYLE = ['-', '-', '--', ':', '-']
-BOX_COLORS = ['red', 'blue']
+BOX_COLORS = ['coral', 'steelblue']
 
 
 # ============================================================
@@ -336,6 +358,9 @@ def process_all_oceans_by_season(n_bins=2):
 
 
 def draw_two_boxplot(ax, data, labels, ylabel):
+    BOX_EDGE_COLORS = ['#8B0000', '#003366']   # 深红、深蓝
+    BOX_FACE_COLORS = ['#F6B6B6', '#B7D4F0']   # 浅红、浅蓝
+
     bp = ax.boxplot(
         data,
         tick_labels=labels,
@@ -344,23 +369,29 @@ def draw_two_boxplot(ax, data, labels, ylabel):
         showfliers=False
     )
 
-    for box, color in zip(bp['boxes'], BOX_COLORS):
-        box.set_facecolor('none')
-        box.set_edgecolor(color)
+    # 箱体：深色边框 + 浅色填充
+    for box, edge_color, face_color in zip(bp['boxes'], BOX_EDGE_COLORS, BOX_FACE_COLORS):
+        box.set_facecolor(face_color)
+        box.set_edgecolor(edge_color)
         box.set_linewidth(2)
+        box.set_alpha(0.65)
 
-    for median, color in zip(bp['medians'], BOX_COLORS):
+    # 中位数线
+    for median, color in zip(bp['medians'], BOX_EDGE_COLORS):
         median.set_color(color)
         median.set_linewidth(2)
 
+    # whiskers
     for i, whisker in enumerate(bp['whiskers']):
-        whisker.set_color(BOX_COLORS[i // 2])
+        whisker.set_color(BOX_EDGE_COLORS[i // 2])
         whisker.set_linewidth(1.5)
 
+    # caps
     for i, cap in enumerate(bp['caps']):
-        cap.set_color(BOX_COLORS[i // 2])
+        cap.set_color(BOX_EDGE_COLORS[i // 2])
         cap.set_linewidth(1.5)
 
+    # 散点
     rng = np.random.default_rng(42)
     for i, y in enumerate(data, start=1):
         y = np.asarray(y, dtype=float)
@@ -552,15 +583,15 @@ def main(icon_style='nature'):
 
     # ---- Compute data for panel (c): fig3 panel b (multiple lines with errorbars) ----
     print('Computing coupling decomposition data for panel (c)...')
-    colors = plt.cm.tab10(np.linspace(0, 1, 5))
     sorted_idx = np.argsort(df['ret_cot_cer'])
 
     # --- Lines 2-3: Fixed sza=54.4, per-point cot, with errorbar ---
     lookup_folders_fixed_sza = ['gasdcp_surcp', 'surdcp_gascp']
     lookup_labels_fixed_sza = [
-        r'$A_{\mathrm{sfc}}$ Coupled ($k_{\mathrm{cp}}=$',
-        r'Gas Coupled ($k_{\mathrm{cp}}=$'
+        r'$A_{\mathrm{sfc}}$ Coupled: $k$=',
+        r'Gas Coupled: $k$='
     ]
+    lookup_colors_fixed_sza = [AUX_SURFACE_COLOR, AUX_GAS_COLOR]
 
     # Store results for panel (c)
     panel_c_lines = []
@@ -587,19 +618,19 @@ def main(icon_style='nature'):
             'cot_bins': cot_bins,
             'alb_bins': alb_bins,
             'alb_std': alb_std,
-            'color': LINECOLOR[idx_offset + 1],
-            'label': f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f})'
+            'color': lookup_colors_fixed_sza[idx_offset],
+            'label': f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f}'
         })
 
     # --- Lines 4-5: Per-point sza, with errorbar ---
     lookup_folders_sza = ['dcp', 'cp']
     lookup_labels_sza = [
-        r'SZA Coupled ($k_{\mathrm{cp}}=$',
-        r'All Coupled ($k_{\mathrm{cp}}=$'
+        r'SZA Coupled: $k=$',
+        r'All Coupled: $k_{\mathrm{cp}}=$'
     ]
+    lookup_colors_sza = [AUX_SZA_COLOR, CP_COLOR]
 
     for idx_offset, folder in enumerate(lookup_folders_sza):
-        idx = idx_offset + 3
         print(f'  Computing {folder} with per-point sza...')
         alb_vals = compute_sbdart_albedo_per_point(df, folder)
         df[f'alb_{folder}_persza'] = alb_vals
@@ -617,13 +648,12 @@ def main(icon_style='nature'):
             bootstrap=True
         )
 
-        line_color = colors[2] if idx == 4 else LINECOLOR[idx]
         panel_c_lines.append({
             'cot_bins': cot_bins,
             'alb_bins': alb_bins,
             'alb_std': alb_std,
-            'color': line_color,
-            'label': f'{lookup_labels_sza[idx_offset]}{k_val:.2f})'
+            'color': lookup_colors_sza[idx_offset],
+            'label': f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
         })
 
     # ================================================================
@@ -669,39 +699,39 @@ def main(icon_style='nature'):
     solid_handles = []
     dashed_handles = []
 
-    h, = ax1.plot(cot_range, alb_t91, color=colors[0], lw=2, ls='-')
+    h, = ax1.plot(cot_range, alb_t91, color=T91_COLOR, lw=2, ls='-')
     solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_t91_fit, color=colors[0], lw=1.5, ls='--', alpha=0.7)
+    h, = ax1.plot(cot_range, alb_t91_fit, color=T91_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     sorted_idx_a = np.argsort(df['ret_cot_cer'])
-    h, = ax1.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=colors[1], lw=2, ls='-')
+    h, = ax1.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=DCP_COLOR, lw=2, ls='-')
     solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_dcp_fit, color=colors[1], lw=1.5, ls='--', alpha=0.7)
+    h, = ax1.plot(cot_range, alb_dcp_fit, color=DCP_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     h = ax1.errorbar(
         cp_cot_bins, cp_alb_bins, yerr=cp_alb_std,
-        color=colors[2], fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+        color=CP_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
     )
     solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_cp_fit, color=colors[2], lw=1.5, ls='--', alpha=0.7)
+    h, = ax1.plot(cot_range, alb_cp_fit, color=CP_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     h = ax1.errorbar(
         ret_cot_bins, ret_alb_bins, yerr=ret_alb_std,
-        color=colors[3], fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+        color=RET_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
     )
     solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_ret_fit, color=colors[3], lw=1.5, ls='--', alpha=0.7)
+    h, = ax1.plot(cot_range, alb_ret_fit, color=RET_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     h = ax1.errorbar(
         msk_cot_bins, msk_alb_bins, yerr=msk_alb_std,
-        color=colors[4], fmt='s-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+        color=MSK_COLOR, fmt='s-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
     )
     solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_msk_fit, color=colors[4], lw=1.5, ls='--', alpha=0.7)
+    h, = ax1.plot(cot_range, alb_msk_fit, color=MSK_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     ax1.set_xlabel('COT', fontsize=15, fontweight='medium')
@@ -733,18 +763,18 @@ def main(icon_style='nature'):
     # ================================================================
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
-        color=colors[0], lw=2,
-        label=rf'Quadrature ($k_\mathrm{{T91}}$={k_quad:.2f})'
+        color=T91_COLOR, lw=2,
+        label=rf'Quadrature: $k_\mathrm{{T91}}$={k_quad:.2f}'
     )
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
-        color=LINECOLOR[3], lw=2, linestyle='--',
-        label=rf'Sbdart, VS ($k_\mathrm{{dcp}}$={k_mono:.2f})'
+        color=AUX_VS_COLOR, lw=2, alpha=0.7,
+        label=rf'Sbdart VS: $k$={k_mono:.2f})'
     )
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
-        color=colors[1], lw=2,
-        label=rf'Sbdart, SW ($k_\mathrm{{dcp}}$={k_sbd:.2f})'
+        color=DCP_COLOR, lw=2,
+        label=rf'Sbdart SW: $k_\mathrm{{dcp}}$={k_sbd:.2f})'
     )
     ax2.set_xlim(0, 60)
     ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -760,17 +790,23 @@ def main(icon_style='nature'):
     # Line 1: Decoupled SBDART (dcp) with fixed sza=54.4
     ax3.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
-        color=colors[1], lw=2,
-        linestyle=LINESTYLE[0],
-        label=rf'Decoupled ($k_{{\mathrm{{dcp}}}}$={k_sbd:.2f})'
+        color=DCP_COLOR, lw=2,
+        label=rf'Decoupled: $k_{{\mathrm{{dcp}}}}$={k_sbd:.2f}'
     )
 
-    for line_data in panel_c_lines:
+    for line_data in panel_c_lines[0:3]:
         ax3.errorbar(
             line_data['cot_bins'], line_data['alb_bins'], yerr=line_data['alb_std'],
-            color=line_data['color'], fmt='o-', lw=1.3, ms=3.5, capsize=2.6, capthick=0.8,
+            color=line_data['color'], fmt='o-', lw=1.3, ms=3.5, capsize=2.6, capthick=0.8, alpha=0.7,
             label=line_data['label']
         )
+
+    line_data = panel_c_lines[3] 
+    ax3.errorbar(
+        line_data['cot_bins'], line_data['alb_bins'], yerr=line_data['alb_std'],
+        color=line_data['color'], fmt='o-', lw=1.3, ms=3.5, capsize=2.6, capthick=0.8,
+        label=line_data['label']
+    )
 
     ax3.set_xlim(0, 60)
     ax3.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -820,4 +856,3 @@ def main(icon_style='nature'):
 
 if __name__ == '__main__':
     main(icon_style='nature')
-   
