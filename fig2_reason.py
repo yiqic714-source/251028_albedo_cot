@@ -41,15 +41,15 @@ MIN_CF = 0.1
 # Auxiliary decomposition lines use high-contrast colors not used by panel (a).
 # ============================================================
 T91_COLOR = '#222222'
-DCP_COLOR = '#009E73'
-CP_COLOR = '#0072B2'
-RET_COLOR = '#E69F00'
-MSK_COLOR = '#8C564B'
+DCP_COLOR = '#00bfff'
+CP_COLOR  = '#574cff'
+RET_COLOR = '#ff852e'
+MSK_COLOR = '#f20d38'
 
-AUX_VS_COLOR = '#CC79A7'
-AUX_SURFACE_COLOR = '#7F3C8D'
-AUX_GAS_COLOR = '#D55E00'
-AUX_SZA_COLOR = '#56B4E9'
+AUX_VS_COLOR = "#606581"
+AUX_SURFACE_COLOR = "#F354F3"
+AUX_GAS_COLOR = "#31B704"
+AUX_SZA_COLOR = "#025D37"
 
 PANEL_A_COLORS = [T91_COLOR, DCP_COLOR, CP_COLOR, RET_COLOR, MSK_COLOR]
 LINESTYLE = ['-', '-', '--', ':', '-']
@@ -768,13 +768,13 @@ def main(icon_style='nature'):
     )
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
-        color=AUX_VS_COLOR, lw=2, alpha=0.7,
-        label=rf'Sbdart VS: $k$={k_mono:.2f})'
+        color=AUX_VS_COLOR, lw=2, linestyle='--',
+        label=rf'Sbdart VS: $k$={k_mono:.2f}'
     )
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
-        label=rf'Sbdart SW: $k_\mathrm{{dcp}}$={k_sbd:.2f})'
+        label=rf'Sbdart SW: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
     )
     ax2.set_xlim(0, 60)
     ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -782,7 +782,7 @@ def main(icon_style='nature'):
     ax2.tick_params(axis='both', labelsize=12)
     ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
              transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
+    ax2.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
 
     # ================================================================
     # Panel (c): fig3 panel b (coupling decomposition lines)
@@ -814,7 +814,7 @@ def main(icon_style='nature'):
     ax3.tick_params(axis='both', labelsize=12)
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
+    ax3.legend(loc='lower right', fontsize=9.5, framealpha=0.5)
 
     # ================================================================
     # Panel (d): fig3 panel c (boxplot: cot_disp vs aod_cot)

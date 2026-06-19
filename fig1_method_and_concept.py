@@ -276,9 +276,19 @@ if __name__ == "__main__":
     )
 
     # Classify cloud types
-    cld_retrieval_mask = np.where((Cloud_Retrieval_Phase_Flag == 2) & (Primary_Cloud_Retrieval_Outcome_Flag == 1), 1, 0)
-    cld_mask = np.where((Cloud_Retrieval_Phase_Flag == 2) & (Cloudiness_Flag <= 1), 1, 0)
-    nan_mask = ((Cloud_Retrieval_Phase_Flag != 2) & (Primary_Cloud_Retrieval_Outcome_Flag == 1)) | (ctt_mod < 273.15 - 5)
+    cld_retrieval_mask = np.where(
+        (Cloud_Retrieval_Phase_Flag == 2) &
+        (Primary_Cloud_Retrieval_Outcome_Flag == 1), 1, 0
+    )
+    cld_mask = np.where(
+        (Cloud_Retrieval_Phase_Flag == 2) &
+        (Cloudiness_Flag <= 1), 1, 0
+    )
+    nan_mask = (
+        ((Cloud_Retrieval_Phase_Flag != 2) &
+         (Primary_Cloud_Retrieval_Outcome_Flag == 1)) |
+        (ctt_mod < 273.15 - 5)
+    )
     cld_type = cld_retrieval_mask.astype(int) + cld_mask.astype(int)
     cld_type = np.where(nan_mask, 3, cld_type)
 
@@ -329,8 +339,10 @@ if __name__ == "__main__":
     # Regional invalid data mask
     regional_invalid_mask = (
         invalid_mask &
-        (lat_mod_full_original > lat_min - 0.5) & (lat_mod_full_original < lat_max + 0.5) &
-        (lon_mod_full_original > lon_min - 0.5) & (lon_mod_full_original < lon_max + 0.5)
+        (lat_mod_full_original > lat_min - 0.5) &
+        (lat_mod_full_original < lat_max + 0.5) &
+        (lon_mod_full_original > lon_min - 0.5) &
+        (lon_mod_full_original < lon_max + 0.5)
     )
     indices_regional_invalid = np.where(regional_invalid_mask)
     lat_mod_regional_invalid = lat_mod_full_original[indices_regional_invalid].flatten()
@@ -409,8 +421,15 @@ if __name__ == "__main__":
     # -------------------------
     # (a) Blank: domains of variables in Eq. (3)
     # -------------------------
-    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)} Domains of variables',
-             transform=ax1.transAxes, fontsize=13.5, va='bottom', ha='left')
+    ax1.text(
+        -0.01, 1.01,
+        format_panel_tag(0, icon_style),
+        transform=ax1.transAxes,
+        fontsize=13.5,
+        va='bottom',
+        ha='left'
+    )
+    ax1.set_title('Domains of variables', fontsize=11, loc='center', pad=5.5)
     ax1.set_xticks([])
     ax1.set_yticks([])
     for spine in ax1.spines.values():
@@ -419,8 +438,15 @@ if __name__ == "__main__":
     # -------------------------
     # (b) Blank: data used to build Eq. (3)
     # -------------------------
-    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)} Data to build relationships',
-             transform=ax2.transAxes, fontsize=13.5, va='bottom', ha='left')
+    ax2.text(
+        -0.01, 1.01,
+        format_panel_tag(1, icon_style),
+        transform=ax2.transAxes,
+        fontsize=13.5,
+        va='bottom',
+        ha='left'
+    )
+    ax2.set_title('Data to build relationships', fontsize=11, loc='center', pad=5.5)
     ax2.set_xticks([])
     ax2.set_yticks([])
     for spine in ax2.spines.values():
@@ -434,8 +460,15 @@ if __name__ == "__main__":
     sc1 = ax3.scatter(lon_mod_full, lat_mod_full, s=0.04, c=cld_type_full,
                       marker='o', cmap=cmap_cld, norm=norm, edgecolors='None')
     ax3.grid(True, linestyle='--', alpha=0.5)
-    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)} Full granule',
-             transform=ax3.transAxes, fontsize=14, va='bottom', ha='left')
+    ax3.text(
+        -0.01, 1.01,
+        format_panel_tag(2, icon_style),
+        transform=ax3.transAxes,
+        fontsize=14,
+        va='bottom',
+        ha='left'
+    )
+    ax3.set_title('Full granule', fontsize=11, loc='center', pad=5.5)
 
     rect = patches.Rectangle(
         (lon_min, lat_min),
@@ -484,17 +517,23 @@ if __name__ == "__main__":
                 marker='o', edgecolors='None')
     sc2 = ax4.scatter(lon_mod, lat_mod, c=cld_type, s=8, marker='o',
                       cmap=cmap_cld, norm=norm, edgecolors='None')
-    
+
     # Add black scatter points for CERES FOV centers
     if center_latlon is not None and len(center_latlon) > 0:
         ax4.scatter(center_latlon[:, 1], center_latlon[:, 0],
                     c='black', s=18, marker='o', zorder=5)
-        
-    
+
     ax4.set_xlim(grid_window[1])
     ax4.set_ylim(grid_window[0])
-    ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)} Processed grid',
-             transform=ax4.transAxes, fontsize=14, va='bottom', ha='left')
+    ax4.text(
+        -0.01, 1.01,
+        format_panel_tag(3, icon_style),
+        transform=ax4.transAxes,
+        fontsize=14,
+        va='bottom',
+        ha='left'
+    )
+    ax4.set_title('Processed grid', fontsize=11, loc='center', pad=5.5)
 
     lon_start = grid_window[1][0]
     lon_end = grid_window[1][1]
@@ -533,7 +572,7 @@ if __name__ == "__main__":
     # -------------------------
     pos3 = ax3.get_position()
     pos4 = ax4.get_position()
-    cbar_ax1 = fig.add_axes([pos3.x0, pos3.y0 - 0.07, pos4.x1 - pos3.x0, 0.015])
+    cbar_ax1 = fig.add_axes([pos3.x0, pos3.y0 - 0.075, pos4.x1 - pos3.x0, 0.025])
     cbar1 = plt.colorbar(
         sm_cld_cbar,
         cax=cbar_ax1,

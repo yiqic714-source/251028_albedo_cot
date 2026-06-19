@@ -32,10 +32,12 @@ MIN_CF = 0.1
 # Colors for the 5 lines (order: t91, ret, ret_day, msk, msk_day)
 # Keep the current T91 color; use one representative color from each panel (c)/(d) palette for ret/msk.
 T91_COLOR = '#222222'
-RET_COLOR = '#E69F00'  # orange used for retrieval-domain curves in panel (b)
-MSK_COLOR = '#8B1E3F'  # red-brown used for mask-domain curves in panel (b)
-LINE_COLORS = [T91_COLOR, RET_COLOR, RET_COLOR, MSK_COLOR, MSK_COLOR]
-LINE_STYLES = ['-', '--', '-', '--', '-']
+RET_DAY_COLOR = "#D49102"  # orange used for retrieval-domain curves in panel (b)
+MSK_DAY_COLOR = '#8B1E3F'  # red-brown used for mask-domain curves in panel (b)
+RET_1030_COLOR = '#ff852e'
+MSK_1030_COLOR = '#f20d38'
+LINE_COLORS = [T91_COLOR, RET_1030_COLOR, RET_DAY_COLOR, MSK_1030_COLOR, MSK_DAY_COLOR]
+LINE_STYLES = ['-', '-', '--', '-', '--']
 LINE_LABELS = [
     r'T91: $k$=',
     r'Ret ($A_{\mathrm{c,1030}}): k$=',
@@ -53,11 +55,9 @@ lnb_t91 = np.log(0.13)
 BAR_PALETTES = {
     'ret': {
         'irf': ['#D55E00', '#E69F00', '#F0C808'],
-        'cfa': ['#F4A261', '#F6C667', '#FFF1A8'],
     },
     'msk': {
-        'irf': ['#8B1E3F', '#A44A3F', '#7F3B08'],
-        'cfa': ['#C46A5A', '#D99A7D', '#E7C2A3'],
+        'irf': ['#C46A5A', '#8B1E3F', '#E7C2A3'],
     },
 }
 
@@ -433,13 +433,13 @@ def draw_stacked_bar(ax, data, method, panel_tag):
     """
     ocean_names = oceans
     x = np.arange(len(ocean_names))
-    width = 0.22
+    width = 0.18
+    gap = 0.06   # 第2个柱和第3个柱之间的小间距
+    offsets = [-width - gap / 2, -gap / 2, width + gap / 2]
 
-    variants = ['day', '1030', 'orig']
-    variant_labels = [r'Corrected, $A_{\mathrm{c,1030}}$', 'Corrected, COT$_{\mathrm{1030}}$', 'Uncorrected']
-
+    variants = ['1030', 'day', 'orig']
+    variant_labels = ['Corrected, $A_{\mathrm{c,1030}}$', r'Corrected, COT$_{\mathrm{1030}}$', 'Uncorrected']
     irf_colors = BAR_PALETTES[method]['irf']
-    cfa_colors = BAR_PALETTES[method]['cfa']
 
     legend_handles = []
     legend_labels = []
@@ -463,25 +463,38 @@ def draw_stacked_bar(ax, data, method, panel_tag):
         irf_ocean_mean = np.nanmean(irf_raw) if np.any(np.isfinite(irf_raw)) else np.nan
         cfa_ocean_mean = np.nanmean(cfa_raw) if np.any(np.isfinite(cfa_raw)) else np.nan
 
-        offset = (i - 1) * width
+        offset = offsets[i]
 
         # IRF (bottom)
-        h_irf = ax.bar(x + offset, irf_vals, width,
-                       color=irf_colors[i], edgecolor='k', linewidth=0.5,
-                       label=f'IRF, {vlabel}')
+        h_irf = ax.bar(
+            x + offset, irf_vals, width,
+            color=irf_colors[i],
+            edgecolor=irf_colors[i],
+            linewidth=1.3,
+            hatch=None,
+            label=f'IRF, {vlabel}'
+        )
 
         # CFA (top, stacked on IRF)
-        h_cfa = ax.bar(x + offset, cfa_vals, width, bottom=irf_vals,
-                       color=cfa_colors[i], edgecolor='k', linewidth=0.5,
-                       label=f'CFA, {vlabel}')
+        h_cfa = ax.bar(
+            x + offset, cfa_vals, width,
+            bottom=irf_vals,
+            color='none',
+            edgecolor=irf_colors[i],
+            linewidth=1.3,
+            hatch='///',
+            label=f'CFA, {vlabel}'
+        )
 
         # Keep all six legend entries and append the mean across oceans for each component.
         legend_handles.extend([h_irf, h_cfa])
         legend_labels.extend([
-            rf'IRF ({vlabel}): {irf_ocean_mean:.2f} W m$^{{-2}}$',
+            rf'IRF$_{{\mathrm{{aci}}}}$ ({vlabel}): {irf_ocean_mean:.2f} W m$^{-2}$',
             rf'CFA ({vlabel}): {cfa_ocean_mean:.2f} W m$^{{-2}}$',
         ])
 
+    ax.set_axisbelow(True)
+    ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.35)
     ax.set_title(PANEL_CD_BASE_TITLE + PANEL_CD_TITLE_SUFFIX[method], fontsize=13)
     ax.set_xticks(x)
     ax.set_xticklabels(ocean_names, fontsize=11)

@@ -94,7 +94,7 @@ if __name__ == "__main__":
     ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
 
     # Background
-    ax.add_feature(cfeature.OCEAN, facecolor='white', zorder=0)
+    ax.add_feature(cfeature.OCEAN, facecolor='whitesmoke', zorder=0)
 
     # Draw only ocean outer boundaries
     for ocean, regions in oceans.items():
