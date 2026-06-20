@@ -302,19 +302,19 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
               framealpha=0.5, handlelength=1.2)
 
 
-def make_figure(df, ocean_list, bin_edges, suffix):
-    """Create a figure with len(ocean_list) rows × 4 columns."""
-    n_rows = len(ocean_list)
+def make_figure(df, bin_edges):
+    """Create a single figure with 8 rows (oceans) × 4 columns (seasons), no gaps."""
+    n_rows = len(oceans)
     n_cols = len(season_keys)
 
     fig, axes = plt.subplots(
         n_rows, n_cols,
-        figsize=(2.7 * n_cols, 2.5 * n_rows),
+        figsize=(2.7 * n_cols, 2.0 * n_rows),
         sharex=True, sharey=True,
-        constrained_layout=True
     )
+    fig.subplots_adjust(wspace=0, hspace=0, left=0.04, right=0.98, bottom=0.04, top=0.96)
 
-    for i, ocean in enumerate(ocean_list):
+    for i, ocean in enumerate(oceans):
         for j, season_name in enumerate(season_keys):
             ax = axes[i, j]
             mask = (df['ocean'] == ocean) & (df['season'] == season_name)
@@ -336,16 +336,19 @@ def make_figure(df, ocean_list, bin_edges, suffix):
             else:
                 ax.set_xlabel('')
 
-    # Ocean names vertically on the left side
-    for i, ocean in enumerate(ocean_list):
+    # Ocean names vertically on the left side, aligned to each row's center
+    fig.canvas.draw()
+    for i, ocean in enumerate(oceans):
+        ax_pos = axes[i, 0].get_position()
+        y_center = (ax_pos.y0 + ax_pos.y1) / 2
         fig.text(
-            -0.01, (n_rows - 0.5 - i) / n_rows,
+            -0.007, y_center,
             ocean,
             fontsize=10, fontweight='bold',
             rotation=90, va='center', ha='center'
         )
 
-    out_path = os.path.join(FIG_DIR, f'figsupp_ocean_season_fittings_{suffix}.png')
+    out_path = os.path.join(FIG_DIR, 'figsupp_ocean_season_fittings.png')
     fig.savefig(out_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {out_path}')
@@ -369,10 +372,8 @@ def main():
     os_df.to_csv(SENSITIVITY_CSV_PATH, index=False)
     print(f'Saved per-ocean-season fits to: {SENSITIVITY_CSV_PATH}')
 
-    # ---- Create two figures: first 4 oceans, last 4 oceans ----
-    n_half = len(oceans) // 2
-    make_figure(df, oceans[:n_half], bin_edges, 'part1')
-    make_figure(df, oceans[n_half:], bin_edges, 'part2')
+    # ---- Create single figure: 8 rows × 4 columns, no gaps ----
+    make_figure(df, bin_edges)
 
     print('All done.')
 
