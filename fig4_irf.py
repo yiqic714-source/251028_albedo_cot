@@ -2,73 +2,115 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
-from utils_fitting import (
-    oceans, season_dict, cot_range, cot_to_albedo,
-    mc_fit, format_panel_tag
-)
-from utils_solar import (
-    compute_daytime_fit_data, cot_k_b_to_albedo,
-    calc_monthly_swdown, calc_grid_cell_area
-)
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+
+from utils_fitting import oceans, season_dict, format_panel_tag
+from utils_solar import cot_k_b_to_albedo, calc_monthly_swdown, calc_grid_cell_area
 
 # Paths
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
-TABLE_FOLDER = 'cp'  # coupled SBDART lookup tables (per ocean-season)
-TABLE_DIR = f'{BASE_PATH}/build_sbdart_lookup_table/cot_sza_to_albedo_lookup_table_{TABLE_FOLDER}'
 FIG_DIR = f'{BASE_PATH}/figs'
-FIT_DATA_PATH = f'{BASE_PATH}/processed_data/fig4_panel_b_fit_data.npz'
 SENSITIVITY_1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_1030.csv'
 SENSITIVITY_DAY_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_day.csv'
 BELLOUIN2013_CSV = f'{BASE_PATH}/processed_data/Bellouin2013.csv'
 os.makedirs(FIG_DIR, exist_ok=True)
 
-MIN_COT = 2.5
-MIN_CF = 0.1
+# Output folder for the 16 separate bar PNGs and 2 separate legend PNGs
+BAR_EXPORT_DIR = os.path.join(FIG_DIR, 'fig4_ocean_irf_bars')
+os.makedirs(BAR_EXPORT_DIR, exist_ok=True)
 
-# Colors for the 5 lines (order: t91, ret, ret_day, msk, msk_day)
-# Keep the current T91 color; use one representative color from each panel (c)/(d) palette for ret/msk.
-T91_COLOR = '#222222'
-RET_DAY_COLOR = "#D49102"  # orange used for retrieval-domain curves in panel (b)
-MSK_DAY_COLOR = '#8B1E3F'  # red-brown used for mask-domain curves in panel (b)
-RET_1030_COLOR = '#ff852e'
-MSK_1030_COLOR = '#f20d38'
-LINE_COLORS = [T91_COLOR, RET_1030_COLOR, RET_DAY_COLOR, MSK_1030_COLOR, MSK_DAY_COLOR]
-LINE_STYLES = ['-', '-', '--', '-', '--']
-LINE_LABELS = [
-    r'T91: $k$=',
-    r'Ret ($A_{\mathrm{c,1030}}): k$=',
-    r'Ret (COT$_{\mathrm{1030}}): k$=',
-    r'Msk ($A_{\mathrm{c,1030}}): k$=',
-    r'Msk (COT$_{\mathrm{1030}}): k$=',
-]
+# Backgrounds
+MAIN_FACE_COLOR = (1, 1, 1, 0.55)          # main Fig. 5
+TRANSPARENT_FACE_COLOR = (1, 1, 1, 0.0)   # outside the axes for 16 bar PNGs
+LEGEND_FACE_COLOR = (1, 1, 1, 0.25)       # 2 exported legend PNGs
 
-# T91/uncorrected parameters used consistently in panel (b), (c), and (d).
+# Map style
+CONTOUR_COLOR = '#7B3294'  # purple contour lines for both panels
+MAP_EXTENT = [-180, 180, -60, 60]
+MAP_ASPECT = 3.0          # physical width / height for 360 deg x 120 deg
+
+PANEL_TITLES = {
+    'ret': r'Corrected IRF$_{\mathrm{aci}}$ Using Retrieval-Domain Obs.',
+    'msk': r'Corrected IRF$_{\mathrm{aci}}$ Using Mask-Domain Obs.',
+}
+
+# T91/uncorrected parameters used for the third bar in the separate ocean PNGs
 k_t91 = 1.0
 lnb_t91 = np.log(0.13)
 
-# Panel (c)/(d) palettes are tied to the corresponding panel (b) line colors.
-# ret: orange-yellow family; msk: red-brown family.
+# Ocean-bar settings. The order is fixed as in the exported bar PNGs.
+BAR_VARIANTS = ['1030', 'day', 'orig']
+BAR_LABELS = [
+    r'Corrected, $A_{\mathrm{c,1030}}$',
+    r'Corrected, COT$_{\mathrm{1030}}$',
+    'Uncorrected'
+]
+BAR_XTICK_LABELS = [r'$A_{c,1030}$', r'COT$_{1030}$', 'Uncorr.']
 BAR_PALETTES = {
     'ret': {
         'irf': ['#D55E00', '#E69F00', '#F0C808'],
+        'legend_title': 'Retrieval-domain observations'
     },
     'msk': {
         'irf': ['#C46A5A', '#8B1E3F', '#E7C2A3'],
+        'legend_title': 'Mask-domain observations'
     },
 }
-
-PANEL_CD_BASE_TITLE = 'Radiative Forcings'
-PANEL_CD_TITLE_SUFFIX = {
-    'ret': ' Using Retrieval-Domain Obs.',
-    'msk': ' Using Mask-Domain Obs.',
+BAR_ALPHA = 0.65
+BAR_YLIMS = {
+    'ret': (0, 1.1),
+    'msk': (0, 1.5),
 }
+BAR_AX_POS = [0.28, 0.22, 0.66, 0.66]  # fixed axes box for all 16 bar PNGs
+
 
 # ============================================================
-# Helper functions (from fig2_reason.py)
+# Background and saving helpers
+# ============================================================
+
+def apply_background(fig, axes=None, fig_face_color=MAIN_FACE_COLOR, axes_face_color=None):
+    """
+    Apply background colors with alpha.
+
+    fig_face_color controls the area outside axes.
+    axes_face_color controls the area inside axes; if None, it follows fig_face_color.
+    """
+    fig.patch.set_facecolor(fig_face_color)
+    fig.patch.set_alpha(fig_face_color[-1])
+
+    if axes_face_color is None:
+        axes_face_color = fig_face_color
+
+    if axes is None:
+        axes = fig.axes
+    elif not isinstance(axes, (list, tuple, np.ndarray)):
+        axes = [axes]
+
+    for ax in axes:
+        ax.patch.set_facecolor(axes_face_color)
+        ax.patch.set_alpha(axes_face_color[-1])
+
+
+def save_png(fig, out_path, dpi=300, bbox_inches='tight'):
+    fig.savefig(
+        out_path,
+        dpi=dpi,
+        bbox_inches=bbox_inches,
+        facecolor=fig.get_facecolor(),
+        edgecolor='none',
+        transparent=False
+    )
+
+
+# ============================================================
+# Data loading and coefficients
 # ============================================================
 
 def load_global_data():
+    """Load merged data without applying the cloud/retrieval mask."""
     dfs = []
     for ocean in oceans:
         for season_name in season_dict:
@@ -83,208 +125,61 @@ def load_global_data():
     if not dfs:
         raise FileNotFoundError('No data files found.')
 
-    df = pd.concat(dfs, ignore_index=True)
-
-    df['albedo'] = (
-        (df['sw_all'] - df['sw_clr'] * (1 - df['cf_ceres'])) /
-        df['cf_ceres'] / df['solar_incoming']
-    )
-
-    mask = (
-        (df['cf_ceres'] > MIN_CF) &
-        (df['cf_liq_ceres'] / df['cf_ceres'] > 0.99) &
-        (df['cot_mod08'] > MIN_COT) &
-        (df['ret_cot_cer'] > MIN_COT) &
-        (df['ret_albedo'].between(0, 1)) &
-        (df['albedo'].between(0, 1))
-    )
-
-    return df[mask].dropna()
+    return pd.concat(dfs, ignore_index=True)
 
 
-# ============================================================
-# Panel (a): contourf of mean lookup table
-# ============================================================
-
-def read_lookup_table(ocean, season):
-    """Read the cot-sza-to-albedo lookup table for a given ocean and season."""
-    file_name = f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv'
-    file_path = os.path.join(TABLE_DIR, file_name)
-
-    if not os.path.exists(file_path):
-        return None
-
-    df = pd.read_csv(file_path, index_col=0)
-    sza_grid = np.array(df.index, dtype=float)
-    cot_grid = np.array(df.columns, dtype=float)
-    albedo_grid = df.values
-
-    return sza_grid, cot_grid, albedo_grid
+def build_coef_lookup(coef_df, suffix=''):
+    """Build lookup dict for k and lnb parameters."""
+    lookup = {}
+    for _, row in coef_df.iterrows():
+        key = (str(row['Ocean']).strip(), str(row['Season']).strip())
+        lookup[('k_ret', key)] = row[f'k_ret{suffix}']
+        lookup[('lnb_ret', key)] = row[f'lnb_ret{suffix}']
+        lookup[('k_msk', key)] = row[f'k_msk{suffix}']
+        lookup[('lnb_msk', key)] = row[f'lnb_msk{suffix}']
+    return lookup
 
 
-def compute_mean_lookup_table():
-    """Average lookup tables across all ocean-season combinations."""
-    albedo_sum = None
-    count = 0
-    common_sza_grid = None
-    common_cot_grid = None
-
-    for ocean in oceans:
-        for season in season_dict.keys():
-            result = read_lookup_table(ocean, season)
-            if result is None:
-                continue
-
-            sza_grid, cot_grid, albedo_grid = result
-
-            if common_sza_grid is None:
-                common_sza_grid = sza_grid
-                common_cot_grid = cot_grid
-                albedo_sum = np.zeros_like(albedo_grid)
-            elif not (np.array_equal(sza_grid, common_sza_grid) and
-                      np.array_equal(cot_grid, common_cot_grid)):
-                continue
-
-            albedo_sum += albedo_grid
-            count += 1
-
-    if count == 0:
-        return None, None, None, 0
-
-    albedo_mean = albedo_sum / count
-    return common_sza_grid, common_cot_grid, albedo_mean, count
-
-
-def draw_contourf(ax, sza_grid, cot_grid, albedo_mean, count):
-    """Draw contourf plot on given axes."""
-    levels = np.arange(0, 0.85, 0.05)
-    pcm = ax.contourf(
-        cot_grid, sza_grid, albedo_mean,
-        levels=levels,
-        cmap='Blues',
-        # extend='both',
-    )
-    ax.set_xlim(0, 60)
-    ax.set_ylim(0, 70)
-    ax.set_xlabel('COT', fontsize=13)
-    ax.set_ylabel('SZA (deg)', fontsize=13)
-    return pcm
+def get_coef(lookup, method, ocean, season, param):
+    return lookup.get((f'{param}_{method}', (ocean, season)), np.nan)
 
 
 # ============================================================
-# Panel (b): 5 fit lines (t91, ret, ret_day, msk, msk_day)
-# ============================================================
-
-def draw_fit_lines(ax, recompute=False):
-    """Draw t91, ret, msk, and daytime-adjusted ret/msk fit lines."""
-    print('Loading global data for panel (b)...')
-    df = load_global_data()
-    print(f'Total data points: {len(df)}')
-
-    # --- T91 / uncorrected ---
-    alb_t91_fit = cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91))
-
-    # --- ret (retrieval-domain obs.) ---
-    k_ret, lnb_ret, _, _ = mc_fit(
-        df['ret_cot_cer'].values,
-        df['ret_albedo'].values,
-        cot_std=0.10,
-        albedo_std=0.13,
-        n_mc=300,
-        bootstrap=True
-    )
-    alb_ret_fit = cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret))
-
-    # --- msk (mask-domain obs.) ---
-    k_msk, lnb_msk, _, _ = mc_fit(
-        df['cot_mod08'].values,
-        df['albedo'].values,
-        cot_std=0.10,
-        albedo_std=0.20,
-        n_mc=300,
-        bootstrap=True
-    )
-    alb_msk_fit = cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk))
-
-    # --- Daytime-adjusted ret and msk ---
-    if recompute or not os.path.exists(FIT_DATA_PATH):
-        alb_ret_day_fit, alb_msk_day_fit, k_ret_day, k_msk_day = compute_daytime_fit_data(df)
-    else:
-        print(f'Loading saved fit data from {FIT_DATA_PATH}')
-        data = np.load(FIT_DATA_PATH)
-        alb_ret_day_fit = data['alb_ret_day_fit']
-        alb_msk_day_fit = data['alb_msk_day_fit']
-        k_ret_day = float(data['k_ret_day'])
-        k_msk_day = float(data['k_msk_day'])
-
-    # --- Plot all 5 lines ---
-    fit_curves = [alb_t91_fit, alb_ret_fit, alb_ret_day_fit, alb_msk_fit, alb_msk_day_fit]
-    k_values = [k_t91, k_ret, k_ret_day, k_msk, k_msk_day]
-
-    for i in range(5):
-        ax.plot(cot_range, fit_curves[i],
-                color=LINE_COLORS[i], lw=2, ls=LINE_STYLES[i],
-                label=rf'{LINE_LABELS[i]}{k_values[i]:.2f}')
-
-    ax.set_xlim(0, 60)
-    ax.set_xlabel('COT', fontsize=13)
-    ax.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=13)
-    ax.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
-
-
-# ============================================================
-# Panel (c) and (d): IRF + CFA stacked bar charts
+# IRF calculation for maps and separate ocean-bar PNGs
 # ============================================================
 
 def compute_irf_data():
     """
-    Compute IRF for each ocean, for:
-      - ret_day, ret_1030, ret_orig
-      - msk_day, msk_1030, msk_orig
+    Compute IRF_aci only.
 
     Returns
     -------
-    dict with keys 'ret' and 'msk', each a dict {ocean: {variant: irf}}.
-    The ocean-level values are area-weighted means over all valid seasonal grid cells.
+    ocean_irf : dict
+        ocean_irf[method][ocean][variant] = area-weighted IRF_aci.
+        method is 'ret' or 'msk'; variant is '1030', 'day', or 'orig'.
+    grid_irf : pandas.DataFrame
+        Grid-level corrected Ac_1030 IRF_aci for contour-line maps.
+        Columns: method, lat, lon, irf.
     """
     print('Computing IRF data...')
 
-    variants_order = ['day', '1030', 'orig']
     methods = ['ret', 'msk']
-
-    # Load merged data
     merged_df = load_global_data()
 
-    # Load sensitivity coefficients (wide format)
     coef_1030 = pd.read_csv(SENSITIVITY_1030_CSV)
     coef_day = pd.read_csv(SENSITIVITY_DAY_CSV)
-
-    # Load lnnd_o_lnaod from Bellouin2013.csv (wide format: Ocean, DJF, MAM, JJA, SON)
-    lnnd_df = pd.read_csv(BELLOUIN2013_CSV)
-    lnnd_df.columns = [c.strip() for c in lnnd_df.columns]
-    lnnd_df['Ocean'] = lnnd_df['Ocean'].str.strip()
-    # Melt from wide to long format
-    lnnd_long = lnnd_df.melt(id_vars=['Ocean'], var_name='Season', value_name='lnnd')
-    lnnd_lookup = lnnd_long.set_index(['Ocean', 'Season'])['lnnd'].to_dict()
-
-    # Build coefficient lookups
-    def build_coef_lookup(coef_df, suffix=''):
-        lookup = {}
-        for _, row in coef_df.iterrows():
-            key = (str(row['Ocean']).strip(), str(row['Season']).strip())
-            lookup[('k_ret', key)] = row[f'k_ret{suffix}']
-            lookup[('lnb_ret', key)] = row[f'lnb_ret{suffix}']
-            lookup[('k_msk', key)] = row[f'k_msk{suffix}']
-            lookup[('lnb_msk', key)] = row[f'lnb_msk{suffix}']
-        return lookup
-
     coef_1030_lookup = build_coef_lookup(coef_1030, suffix='')
     coef_day_lookup = build_coef_lookup(coef_day, suffix='_day')
 
-    def get_coef(lookup, method, ocean, season, param):
-        return lookup.get((f'{param}_{method}', (ocean, season)), np.nan)
+    # Bellouin2013.csv is assumed to be wide format: Ocean, DJF, MAM, JJA, SON.
+    lnnd_df = pd.read_csv(BELLOUIN2013_CSV)
+    lnnd_df.columns = [c.strip() for c in lnnd_df.columns]
+    lnnd_df['Ocean'] = lnnd_df['Ocean'].str.strip()
+    lnnd_long = lnnd_df.melt(id_vars=['Ocean'], var_name='Season', value_name='lnnd')
+    lnnd_long['Season'] = lnnd_long['Season'].str.strip()
+    lnnd_lookup = lnnd_long.set_index(['Ocean', 'Season'])['lnnd'].to_dict()
 
-    # Compute SWdown and grid area
+    # SWdown and grid area
     merged_df['month'] = pd.to_datetime(merged_df['time']).dt.month
     unique_lat_month = merged_df[['lat', 'month']].drop_duplicates()
     unique_lat_month['swdown'] = unique_lat_month.apply(
@@ -293,7 +188,6 @@ def compute_irf_data():
     merged_df = merged_df.merge(unique_lat_month, on=['lat', 'month'], how='left')
     merged_df['grid_area_km2'] = merged_df['lat'].apply(calc_grid_cell_area)
 
-    # Aggregate to seasonal means at each lat/lon
     agg_cols = {
         'swdown': 'mean',
         'log_aod_diff': 'mean',
@@ -304,18 +198,18 @@ def compute_irf_data():
     }
     seasonal_grid = merged_df.groupby(['ocean', 'season', 'lat', 'lon']).agg(agg_cols).reset_index()
 
-    # Initialize accumulators for final ocean-level bars.
-    results = {method: {ocean: {} for ocean in oceans} for method in methods}
+    ocean_irf = {method: {ocean: {} for ocean in oceans} for method in methods}
     accum = {
         method: {
             ocean: {
-                variant: {'irf_sum': 0.0, 'irf_area': 0.0}
-                for variant in variants_order
+                variant: {'sum': 0.0, 'area': 0.0}
+                for variant in BAR_VARIANTS
             }
             for ocean in oceans
         }
         for method in methods
     }
+    grid_records = []
 
     for ocean in oceans:
         for season in season_dict.keys():
@@ -323,12 +217,15 @@ def compute_irf_data():
             if not mask.any():
                 continue
 
-            sub = seasonal_grid[mask]
+            sub = seasonal_grid[mask].copy()
             area = sub['grid_area_km2'].values.astype(float)
             if np.nansum(area[np.isfinite(area) & (area > 0)]) <= 0:
                 continue
 
-            # Get coefficients
+            lnnd_val = lnnd_lookup.get((ocean, season), np.nan)
+            if np.isnan(lnnd_val):
+                continue
+
             k_ret_1030 = get_coef(coef_1030_lookup, 'ret', ocean, season, 'k')
             lnb_ret_1030 = get_coef(coef_1030_lookup, 'ret', ocean, season, 'lnb')
             k_ret_day = get_coef(coef_day_lookup, 'ret', ocean, season, 'k')
@@ -339,174 +236,296 @@ def compute_irf_data():
             k_msk_day = get_coef(coef_day_lookup, 'msk', ocean, season, 'k')
             lnb_msk_day = get_coef(coef_day_lookup, 'msk', ocean, season, 'lnb')
 
-            # Per-grid-cell data
-            cot_sub = sub['cot_mod08'].values.astype(float)
-            cf_ret_vals = sub['cf_ret_liq_mod08'].values.astype(float)
-            cf_msk_vals = sub['cf_liq_ceres'].values.astype(float)
-            lnnd_val = lnnd_lookup.get((ocean, season), np.nan)
-
-            # IRF_base = swdown * lnnd_o_lnaod * log_aod_diff
+            cot_vals = sub['cot_mod08'].values.astype(float)
             swdown = sub['swdown'].values.astype(float)
             log_aod_diff = sub['log_aod_diff'].values.astype(float)
             irf_base = swdown * lnnd_val * log_aod_diff
 
+            cf_ret_vals = sub['cf_ret_liq_mod08'].values.astype(float)
+            cf_msk_vals = sub['cf_liq_ceres'].values.astype(float)
+
             variants = {
                 'ret': {
-                    'day': (k_ret_day, lnb_ret_day, cf_ret_vals),
                     '1030': (k_ret_1030, lnb_ret_1030, cf_ret_vals),
+                    'day': (k_ret_day, lnb_ret_day, cf_ret_vals),
                     'orig': (k_t91, lnb_t91, cf_ret_vals),
                 },
                 'msk': {
-                    'day': (k_msk_day, lnb_msk_day, cf_msk_vals),
                     '1030': (k_msk_1030, lnb_msk_1030, cf_msk_vals),
+                    'day': (k_msk_day, lnb_msk_day, cf_msk_vals),
                     'orig': (k_t91, lnb_t91, cf_msk_vals),
                 },
             }
 
             for method in methods:
-                for variant, (k_val, lnb_val, cf_vals) in variants[method].items():
-                    if np.isnan(k_val) or np.isnan(lnb_val) or np.isnan(lnnd_val):
+                for variant in BAR_VARIANTS:
+                    k_val, lnb_val, cf_vals = variants[method][variant]
+                    if np.isnan(k_val) or np.isnan(lnb_val):
                         continue
 
-                    Ac = cot_k_b_to_albedo(cot_sub, k_val, np.exp(lnb_val))
-
-                    # IRF = swdown * dlnNd/dlnAOD * dlnAOD / 3 * k * Ac * (1-Ac) * CF
+                    Ac = cot_k_b_to_albedo(cot_vals, k_val, np.exp(lnb_val))
                     irf_vals = (irf_base / 3.0) * k_val * Ac * (1 - Ac) * cf_vals
 
                     good = np.isfinite(irf_vals) & np.isfinite(area) & (area > 0)
                     if np.any(good):
-                        accum[method][ocean][variant]['irf_sum'] += np.nansum(irf_vals[good] * area[good])
-                        accum[method][ocean][variant]['irf_area'] += np.nansum(area[good])
+                        accum[method][ocean][variant]['sum'] += np.nansum(irf_vals[good] * area[good])
+                        accum[method][ocean][variant]['area'] += np.nansum(area[good])
 
-    # Final ocean-level results
+                    # Grid-level data for Fig. 5 maps: corrected Ac_1030 only.
+                    if variant == '1030':
+                        grid_good = (
+                            np.isfinite(irf_vals) &
+                            np.isfinite(sub['lat'].values) &
+                            np.isfinite(sub['lon'].values)
+                        )
+                        if np.any(grid_good):
+                            grid_records.append(pd.DataFrame({
+                                'method': method,
+                                'lat': sub['lat'].values[grid_good].astype(float),
+                                'lon': sub['lon'].values[grid_good].astype(float),
+                                'irf': irf_vals[grid_good].astype(float),
+                            }))
+
     for method in methods:
         for ocean in oceans:
-            for variant in variants_order:
+            for variant in BAR_VARIANTS:
                 item = accum[method][ocean][variant]
-                irf_mean = item['irf_sum'] / item['irf_area'] if item['irf_area'] > 0 else np.nan
-                results[method][ocean][variant] = irf_mean
+                ocean_irf[method][ocean][variant] = (
+                    item['sum'] / item['area'] if item['area'] > 0 else np.nan
+                )
 
-    return results
+    if grid_records:
+        grid_irf = pd.concat(grid_records, ignore_index=True)
+        grid_irf = grid_irf.groupby(['method', 'lat', 'lon'], as_index=False)['irf'].mean()
+    else:
+        grid_irf = pd.DataFrame(columns=['method', 'lat', 'lon', 'irf'])
+
+    return ocean_irf, grid_irf
 
 
-def draw_irf_bars(ax, data, method, panel_tag):
-    """
-    Draw IRF bar chart for a given method ('ret' or 'msk').
+# ============================================================
+# Fig. 5: corrected Ac_1030 IRF contour-line maps
+# ============================================================
 
-    For each ocean, 3 bars:
-      Day, 10:30, Uncorr
-    No stacking (no CFA).
-    """
-    ocean_names = oceans
-    x = np.arange(len(ocean_names))
-    width = 0.18
-    gap = 0.06
-    offsets = [-width - gap / 2, -gap / 2, width + gap / 2]
+def get_common_contour_levels(grid_irf):
+    vals = grid_irf['irf'].values.astype(float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return np.array([])
 
-    variants = ['1030', 'day', 'orig']
-    variant_labels = ['Corrected, $A_{\mathrm{c,1030}}$', r'Corrected, COT$_{\mathrm{1030}}$', 'Uncorrected']
-    irf_colors = BAR_PALETTES[method]['irf']
+    vmin = np.nanpercentile(vals, 5)
+    vmax = np.nanpercentile(vals, 95)
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or np.isclose(vmin, vmax):
+        vmin = np.nanmin(vals)
+        vmax = np.nanmax(vals)
 
-    legend_handles = []
-    legend_labels = []
+    if np.isclose(vmin, vmax):
+        return np.array([vmin])
 
-    for i, (var, vlabel) in enumerate(zip(variants, variant_labels)):
-        irf_vals_list = []
-        for ocean in ocean_names:
-            if ocean in data and var in data[ocean]:
-                irf = data[ocean][var]
-                irf_vals_list.append(irf if np.isfinite(irf) else np.nan)
-            else:
-                irf_vals_list.append(np.nan)
+    return np.unique(np.round(np.linspace(vmin, vmax, 3), 2))
 
-        irf_raw = np.asarray(irf_vals_list, dtype=float)
-        irf_vals = np.nan_to_num(irf_raw, nan=0.0)
-        irf_ocean_mean = np.nanmean(irf_raw) if np.any(np.isfinite(irf_raw)) else np.nan
 
-        offset = offsets[i]
+def draw_irf_contour_map(ax, grid_irf, method, panel_tag, levels):
+    df = grid_irf[grid_irf['method'] == method].copy()
 
-        h_irf = ax.bar(
-            x + offset, irf_vals, width,
-            color=irf_colors[i],
-            edgecolor=irf_colors[i],
-            linewidth=1.3,
-            hatch=None,
+    ax.set_global()
+    ax.set_extent(MAP_EXTENT, crs=ccrs.PlateCarree())
+
+    ax.add_feature(cfeature.LAND, facecolor='white', edgecolor='black', linewidth=0.35, zorder=2)
+    ax.coastlines(linewidth=0.45, color='black', zorder=3)
+
+    gl = ax.gridlines(draw_labels=True, color='none')
+    gl.top_labels = False
+    gl.right_labels = False
+    gl.xlabel_style = {'size': 9}
+    gl.ylabel_style = {'size': 9}
+
+    if df.empty or len(levels) == 0:
+        ax.text(0.5, 0.5, 'No valid data', transform=ax.transAxes,
+                ha='center', va='center', fontsize=12)
+    else:
+        lat_vals = np.sort(df['lat'].unique())
+        lon_vals = np.sort(df['lon'].unique())
+        z = (
+            df.pivot_table(index='lat', columns='lon', values='irf', aggfunc='mean')
+              .reindex(index=lat_vals, columns=lon_vals)
         )
+        lon2d, lat2d = np.meshgrid(lon_vals, lat_vals)
+        zvals = z.values.astype(float)
 
-        legend_handles.append(h_irf)
-        legend_labels.append(
-            rf'IRF$_{{\mathrm{{aci}}}}$ ({vlabel}): {irf_ocean_mean:.2f} W m$^{-2}$'
-        )
+        if np.sum(np.isfinite(zvals)) >= 4 and len(levels) >= 2:
+            cs = ax.contour(
+                lon2d, lat2d, zvals,
+                levels=levels,
+                colors=CONTOUR_COLOR,
+                linewidths=0.9,
+                transform=ccrs.PlateCarree(),
+                zorder=4
+            )
+            if len(cs.levels) > 0:
+                ax.clabel(cs, inline=True, fontsize=8, fmt='%.2f', colors=CONTOUR_COLOR)
+        else:
+            ax.scatter(
+                df['lon'], df['lat'], s=4,
+                color=CONTOUR_COLOR,
+                transform=ccrs.PlateCarree(), zorder=4
+            )
+            ax.text(0.5, 0.04, 'Too few gridded points for contour lines',
+                    transform=ax.transAxes, ha='center', va='bottom', fontsize=9)
 
-    ax.set_axisbelow(True)
-    ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.35)
-    ax.set_title(PANEL_CD_BASE_TITLE + PANEL_CD_TITLE_SUFFIX[method], fontsize=13)
-    ax.set_xticks(x)
-    ax.set_xticklabels(ocean_names, fontsize=11)
-    ax.set_ylabel('Radiative Forcing (W m$^{-2}$)', fontsize=12)
-    ax.legend(legend_handles, legend_labels, fontsize=9.5, loc='upper right',
-              framealpha=0.8)
+    ax.set_title(PANEL_TITLES[method], fontsize=13, pad=7)
     ax.text(-0.01, 1.01, panel_tag,
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
+
+
+def align_map_axes_to_full_width(fig, ax_top, ax_bottom, x0=0.06, x1=0.97,
+                                 y0=0.045, y1=0.975, gap=0.095,
+                                 map_aspect=MAP_ASPECT):
+    """
+    Make the two maps span the same left/right limits while preserving the
+    PlateCarree aspect for [-180, 180] x [-60, 60], and force a visible gap
+    between the two map panels.
+    """
+    fig_w, fig_h = fig.get_size_inches()
+    width = x1 - x0
+    height = (width * fig_w / map_aspect) / fig_h
+
+    available = y1 - y0
+    total = 2 * height + gap
+    if total > available:
+        height = (available - gap) / 2.0
+
+    y_bottom = y0 + (available - (2 * height + gap)) / 2.0
+    ax_bottom.set_position([x0, y_bottom, width, height])
+    ax_top.set_position([x0, y_bottom + height + gap, width, height])
+
+
+# ============================================================
+# Separate PNGs: 16 ocean-level bar charts + 2 legends
+# ============================================================
+
+def set_bar_axes_style(ax, show_ylabel=False, ylim=(0, 1.5)):
+    # Only left and bottom spines.
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_linewidth(0.9)
+    ax.spines['bottom'].set_linewidth(0.9)
+
+    # No xticks and no x tick labels.
+    ax.set_xticks([])
+    ax.tick_params(axis='x', bottom=False, labelbottom=False)
+    ax.tick_params(axis='y', labelsize=8.5, direction='out', length=3, width=0.8)
+    ax.set_ylim(*ylim)
+    if show_ylabel:
+        ax.set_ylabel(r'IRF$_{\mathrm{aci}}$ (W m$^{-2}$)', fontsize=11)
+    else:
+        ax.set_ylabel('')
+        # Keep y ticks and y tick labels for non-NPO panels; only remove the ylabel.
+        ax.tick_params(axis='y', labelleft=True)
+
+
+def draw_single_ocean_bar(ax, ocean_irf, method, ocean):
+    colors = BAR_PALETTES[method]['irf']
+    vals = np.asarray([ocean_irf[method][ocean].get(var, np.nan) for var in BAR_VARIANTS], dtype=float)
+    plot_vals = np.nan_to_num(vals, nan=0.0)
+    x = np.arange(len(BAR_VARIANTS))
+
+    ax.bar(x, plot_vals, width=0.62, color=colors, edgecolor=colors, linewidth=1.2, alpha=BAR_ALPHA)
+    ax.axhline(0, color='0.25', linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.30)
+
+    # Title inside the axes, horizontally centered.
+    ax.text(0.5, 0.93, ocean, transform=ax.transAxes,
+            ha='center', va='top', fontsize=15)
+
+    set_bar_axes_style(ax, show_ylabel=(ocean == 'NPO'), ylim=BAR_YLIMS[method])
+
+
+def save_ocean_bar_pngs(ocean_irf):
+    for method in ['ret', 'msk']:
+        for ocean in oceans:
+            fig = plt.figure(figsize=(2.0, 1.75))
+            ax = fig.add_axes(BAR_AX_POS)
+            apply_background(
+                fig, ax,
+                fig_face_color=TRANSPARENT_FACE_COLOR,
+                axes_face_color=(1, 1, 1, BAR_ALPHA)
+            )
+            draw_single_ocean_bar(ax, ocean_irf, method, ocean)
+            ax.set_position(BAR_AX_POS)
+
+            out_path = os.path.join(BAR_EXPORT_DIR, f'fig4_{method}_{ocean}_irf_bars.png')
+            save_png(fig, out_path, dpi=300, bbox_inches=None)
+            plt.close(fig)
+            print(f'Saved: {out_path}')
+
+
+def save_bar_legend_pngs():
+    for method in ['ret', 'msk']:
+        colors = BAR_PALETTES[method]['irf']
+        handles = [
+            Patch(facecolor=colors[i], edgecolor=colors[i], alpha=BAR_ALPHA, label=BAR_LABELS[i])
+            for i in range(len(BAR_VARIANTS))
+        ]
+
+        fig = plt.figure(figsize=(5.8, 0.8))
+        apply_background(fig, fig_face_color=LEGEND_FACE_COLOR)
+        fig.legend(
+            handles=handles,
+            labels=BAR_LABELS,
+            loc='center',
+            ncol=1,
+            frameon=False,
+            fontsize=10,
+            title_fontsize=10.5,
+            handlelength=1.6,
+            columnspacing=1.2
+        )
+        out_path = os.path.join(BAR_EXPORT_DIR, f'fig4_{method}_irf_bar_legend.png')
+        save_png(fig, out_path, dpi=300)
+        plt.close(fig)
+        print(f'Saved: {out_path}')
 
 
 # ============================================================
 # Main
 # ============================================================
 
-def main(recompute=False):
-    # ---- Panel (a): contourf ----
-    print('Computing mean lookup table...')
-    sza_grid, cot_grid, albedo_mean, count = compute_mean_lookup_table()
-    if count == 0:
-        print('No lookup tables found!')
-        return
-    print(f'Averaged {count} ocean-season lookup tables.')
+def main():
+    ocean_irf, grid_irf = compute_irf_data()
+    levels = get_common_contour_levels(grid_irf)
 
-    # ---- Compute IRF data for panels (c) and (d) ----
-    irf_data = compute_irf_data()
+    fig = plt.figure(figsize=(12, 8.9))
 
-    # ---- Create figure: 3 rows, 2 columns ----
-    # Row 1: (a) contourf, (b) fit lines
-    # Row 2: (c) Ret stacked bar
-    # Row 3: (d) Msk stacked bar
-    fig = plt.figure(figsize=(12, 11))
+    gs = fig.add_gridspec(
+        2, 1,
+        hspace=0.75,
+        bottom=0.055,
+        top=0.965,
+        left=0.06,
+        right=0.97
+    )
 
-    # GridSpec: row heights proportional to content
-    gs = fig.add_gridspec(3, 2, hspace=0.30, wspace=0.35,
-                          height_ratios=[4.8, 3.2, 3.2],
-                          bottom=0.06, top=0.96, left=0.06, right=0.97)
+    ax_a = fig.add_subplot(gs[0, 0], projection=ccrs.PlateCarree())
+    ax_b = fig.add_subplot(gs[1, 0], projection=ccrs.PlateCarree())
+    
 
-    ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[0, 1])
-    ax_c = fig.add_subplot(gs[1, :])  # Span full width
-    ax_d = fig.add_subplot(gs[2, :])  # Span full width
+    draw_irf_contour_map(ax_a, grid_irf, 'ret', format_panel_tag(0, 'nature'), levels)
+    draw_irf_contour_map(ax_b, grid_irf, 'msk', format_panel_tag(1, 'nature'), levels)
 
-    # Panel (a): contourf
-    pcm = draw_contourf(ax_a, sza_grid, cot_grid, albedo_mean, count)
-    cbar = fig.colorbar(pcm, ax=ax_a)
-    cbar.set_label('$A_\mathrm{c,dcp}$', fontsize=13)
-    ax_a.text(-0.01, 1.01, format_panel_tag(0, 'nature'),
-              transform=ax_a.transAxes, fontsize=17, va='bottom', ha='left')
+    # Explicitly preserve the map aspect and enforce a visible gap between panels.
+    align_map_axes_to_full_width(fig, ax_a, ax_b, x0=0.06, x1=0.97, y0=0.045, y1=0.975, gap=0.095)
 
-    # Panel (b): fit lines
-    draw_fit_lines(ax_b, recompute=recompute)
-    ax_b.text(-0.01, 1.01, format_panel_tag(1, 'nature'),
-              transform=ax_b.transAxes, fontsize=17, va='bottom', ha='left')
-
-    # Panel (c): Ret IRF bars
-    draw_irf_bars(ax_c, irf_data['ret'], 'ret', format_panel_tag(2, 'nature'))
-
-    # Panel (d): Msk IRF bars
-    draw_irf_bars(ax_d, irf_data['msk'], 'msk', format_panel_tag(3, 'nature'))
-
-    out_path = os.path.join(FIG_DIR, 'fig4_radiative_forcings.png')
-    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    out_path = os.path.join(FIG_DIR, 'fig4_corrected_ac1030_irf_maps.png')
+    save_png(fig, out_path, dpi=300)
     plt.close(fig)
     print(f'Saved: {out_path}')
 
+    # Separate outputs: 16 ocean bar PNGs + 2 legend PNGs.
+    save_ocean_bar_pngs(ocean_irf)
+    save_bar_legend_pngs()
+
 
 if __name__ == '__main__':
-    import sys
-    recompute = '--recompute' in sys.argv
-    main(recompute=recompute)
+    main()
