@@ -46,22 +46,22 @@ MAP_EXTENT = [-180, 180, -60, 60]
 VAR_INFO = [
     {
         'name': 'swdown',
-        'title': r'SW$_{\downarrow}$',
-        'cbar_label': r'SW$_{\downarrow}$ (W m$^{-2}$)',
+        'title': r'SW$_\mathrm{down}$',
+        'cbar_label': r'SW$_\mathrm{down}$ (W m$^{-2}$)',
         'cmap': 'YlOrRd',
         'robust': True,
     },
     {
         'name': 'log_aod_diff',
-        'title': r'$\Delta \ln(\mathrm{AOD})$',
-        'cbar_label': r'$\Delta \ln(\mathrm{AOD})$',
+        'title': r'$\Delta \ln\mathrm{AOD}$',
+        'cbar_label': r'$\Delta \ln\mathrm{AOD}$',
         'cmap': 'YlGnBu',
         'robust': True,
     },
     {
         'name': 'cf_liq_ceres',
-        'title': r'Liquid CF, mask domain',
-        'cbar_label': r'Liquid CF, mask domain',
+        'title': r'CF$_\mathrm{msk}$',
+        'cbar_label': r'CF$_\mathrm{msk}$',
         'cmap': 'Blues',
         'robust': False,
         'vmin': 0,
@@ -69,8 +69,8 @@ VAR_INFO = [
     },
     {
         'name': 'cf_ret_liq_mod08',
-        'title': r'Liquid CF, retrieval domain',
-        'cbar_label': r'Liquid CF, retrieval domain',
+        'title': r'CF$_\mathrm{ret}$',
+        'cbar_label': r'CF$_\mathrm{ret}$',
         'cmap': 'Blues',
         'robust': False,
         'vmin': 0,
@@ -242,7 +242,7 @@ def plot_five_maps(grid_mean):
         3, 2,
         left=0.055, right=0.975,
         bottom=0.055, top=0.955,
-        hspace=0.34, wspace=0.16
+        hspace=0.34, wspace=0.08
     )
 
     axes = [
