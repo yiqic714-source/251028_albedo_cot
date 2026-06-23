@@ -220,7 +220,7 @@ def compute_irf_data():
         'cf_liq_ceres': 'mean',       # CF_msk
         'cf_ret_liq_mod08': 'mean',   # CF_ret
         'cot_mod08': 'mean',
-        'grid_area_km2': 'first',
+        'grid_area_km2': 'mean',
     }
     seasonal_grid = merged_df.groupby(['ocean', 'season', 'lat', 'lon']).agg(agg_cols).reset_index()
 
@@ -651,11 +651,29 @@ def save_ocean_bar_pngs(ocean_irf):
             print(f'Saved: {out_path}')
 
 
-def save_bar_legend_pngs():
+def save_bar_legend_pngs(ocean_irf):
     for method in ['ret', 'msk']:
         colors = BAR_PALETTES[method]['irf']
+
+        labels = []
+        for i, variant in enumerate(BAR_VARIANTS):
+            irf_vals = [
+                ocean_irf[method][ocean].get(variant, np.nan)
+                for ocean in oceans
+            ]
+            irf_mean = np.nanmean(irf_vals)
+
+            labels.append(
+                rf'{BAR_LABELS[method][i]}: {irf_mean:.2f} W m$^{{-2}}$'
+            )
+
         handles = [
-            Patch(facecolor=colors[i], edgecolor=colors[i], alpha=BAR_ALPHA, label=BAR_LABELS[method][i])
+            Patch(
+                facecolor=colors[i],
+                edgecolor=colors[i],
+                alpha=BAR_ALPHA,
+                label=labels[i]
+            )
             for i in range(len(BAR_VARIANTS))
         ]
 
@@ -663,7 +681,7 @@ def save_bar_legend_pngs():
         apply_background(fig, fig_face_color=LEGEND_FACE_COLOR)
         fig.legend(
             handles=handles,
-            labels=BAR_LABELS[method],
+            labels=labels,
             loc='center',
             ncol=1,
             frameon=False,
@@ -672,11 +690,11 @@ def save_bar_legend_pngs():
             handlelength=1.6,
             columnspacing=1.2
         )
+
         out_path = os.path.join(BAR_EXPORT_DIR, f'fig4_{method}_irf_bar_legend.png')
         save_png(fig, out_path, dpi=300)
         plt.close(fig)
         print(f'Saved: {out_path}')
-
 
 # ============================================================
 # Main
@@ -706,16 +724,6 @@ def main():
     draw_irf_contour_map(ax_b, grid_irf, 'msk', format_panel_tag(1, 'nature'), levels)
     draw_overestimate_bars(ax_c, overestimate, format_panel_tag(2, 'nature'))
 
-    # # Explicitly preserve the map aspect and enforce a visible gap between panels.
-    # pos_c = ax_c.get_position()
-    # align_map_axes_to_full_width(
-    #     fig, ax_a, ax_b,
-    #     x0=0.06, x1=0.97,
-    #     y0=pos_c.y1 + 0.025,
-    #     y1=0.965,
-    #     gap=0.085
-    # )
-
     out_path = os.path.join(FIG_DIR, 'fig4_irf_underly.png')
     save_png(fig, out_path, dpi=300)
     plt.close(fig)
@@ -723,7 +731,7 @@ def main():
 
     # Separate outputs: 16 ocean bar PNGs + 2 legend PNGs.
     save_ocean_bar_pngs(ocean_irf)
-    save_bar_legend_pngs()
+    save_bar_legend_pngs(ocean_irf)
 
 
 if __name__ == '__main__':
