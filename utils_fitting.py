@@ -235,7 +235,8 @@ def cot_to_albedo(cot, method, sza=None, table_folder='dcp', ocean=None, season=
     cot = np.asarray(cot, dtype=float)
 
     if method == 'sbdart':
-        if table_folder == 'dcp' or table_folder == 'dcp_mono':
+        # print(table_folder)
+        if 'dcp' in table_folder:
             file_name = 'cot_sza_to_albedo_lookup_table_TPO_MAM.csv'
         else:
             file_name = f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv'

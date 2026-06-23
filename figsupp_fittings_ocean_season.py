@@ -290,17 +290,203 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
         Line2D([0], [0], color=T91_COLOR, lw=2, ls='-',
                label=rf'T91: $k$={k_t91:.2f}'),
         Line2D([0], [0], color=DCP_COLOR, lw=2, ls='-',
-               label=rf'DCP: $k$={k_dcp_os:.2f}'),
+               label=rf'Dcp: $k$={k_dcp_os:.2f}'),
         Line2D([0], [0], color=CP_COLOR, lw=2, ls='-',
-               label=rf'CP: $k$={k_cp_os:.2f}'),
+               label=rf'Cp: $k$={k_cp_os:.2f}'),
         Line2D([0], [0], color=RET_COLOR, lw=2, ls='-',
-               label=rf'RET: $k$={k_ret_os:.2f}'),
+               label=rf'Ret: $k$={k_ret_os:.2f}'),
         Line2D([0], [0], color=MSK_COLOR, lw=2, ls='-',
-               label=rf'MSK: $k$={k_msk_os:.2f}'),
+               label=rf'Msk: $k$={k_msk_os:.2f}'),
     ]
     ax.legend(handles=legend_elements, loc='lower right', fontsize=7,
               framealpha=0.5, handlelength=1.2)
 
+def safe_albedo_to_y(albedo):
+    """Convert Ac to ln[Ac/(1-Ac)] safely."""
+    albedo = np.asarray(albedo, dtype=float)
+    albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
+    return albedo_to_y(albedo)
+
+
+def make_asymmetric_logit_yerr(alb_mean, alb_std):
+    """Convert Ac-space std to asymmetric logit-space yerr."""
+    alb_mean = np.asarray(alb_mean, dtype=float)
+    alb_std = np.asarray(alb_std, dtype=float)
+
+    alb_low = np.clip(alb_mean - alb_std, 1e-6, 1 - 1e-6)
+    alb_high = np.clip(alb_mean + alb_std, 1e-6, 1 - 1e-6)
+    alb_mean_clip = np.clip(alb_mean, 1e-6, 1 - 1e-6)
+
+    y_mean = safe_albedo_to_y(alb_mean_clip)
+    y_low = safe_albedo_to_y(alb_low)
+    y_high = safe_albedo_to_y(alb_high)
+
+    return np.vstack([y_mean - y_low, y_high - y_mean])
+
+
+def draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges):
+    """Draw the same curves in linearized space:
+    x = ln(COT), y = ln[Ac/(1-Ac)].
+    """
+    n_pts = len(sub)
+    if n_pts < 5:
+        ax.text(0.5, 0.5, 'Insufficient data',
+                transform=ax.transAxes, ha='center', va='center', fontsize=8)
+        return
+
+    x_range = cot_to_x(cot_range)
+
+    # T91
+    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.4)
+    k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
+    y_t91 = safe_albedo_to_y(alb_t91)
+    y_t91_fit = k_t91 * x_range + lnb_t91
+
+    # DCP
+    alb_dcp_os = cot_to_albedo(
+        sub['ret_cot_cer'].values, 'sbdart',
+        sza=54.4, table_folder='dcp'
+    )
+    k_dcp_os, lnb_dcp_os = fit_k_b_in_logit_space(sub['ret_cot_cer'].values, alb_dcp_os)
+    sorted_idx = np.argsort(sub['ret_cot_cer'].values)
+    x_dcp = cot_to_x(sub['ret_cot_cer'].values[sorted_idx])
+    y_dcp = safe_albedo_to_y(alb_dcp_os[sorted_idx])
+    y_dcp_fit = k_dcp_os * x_range + lnb_dcp_os
+
+    # CP
+    alb_cp_os = cot_to_albedo(
+        sub['ret_cot_cer'].values, 'sbdart',
+        sza=sub['sza'].values, table_folder='cp',
+        ocean=ocean, season=season_name
+    )
+    k_cp_os, lnb_cp_os, _, _ = mc_fit(
+        sub['ret_cot_cer'].values, alb_cp_os,
+        cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True
+    )
+    y_cp_fit = k_cp_os * x_range + lnb_cp_os
+    cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
+        sub, 'ret_cot_cer', 'cp_albedo', bin_edges
+    )
+
+    # RET
+    k_ret_os, lnb_ret_os, _, _ = mc_fit(
+        sub['ret_cot_cer'].values, sub['ret_albedo'].values,
+        cot_std=0.10, albedo_std=0.13, n_mc=300, bootstrap=True
+    )
+    y_ret_fit = k_ret_os * x_range + lnb_ret_os
+    ret_cot_bins, ret_alb_bins, ret_alb_std = bin_data_by_cot(
+        sub, 'ret_cot_cer', 'ret_albedo', bin_edges
+    )
+
+    # MSK
+    k_msk_os, lnb_msk_os, _, _ = mc_fit(
+        sub['cot_mod08'].values, sub['albedo'].values,
+        cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True
+    )
+    y_msk_fit = k_msk_os * x_range + lnb_msk_os
+    msk_cot_bins, msk_alb_bins, msk_alb_std = bin_data_by_cot(
+        sub, 'cot_mod08', 'albedo', bin_edges
+    )
+
+    # Plot T91
+    ax.plot(x_range, y_t91, color=T91_COLOR, lw=1.2, ls='-')
+    ax.plot(x_range, y_t91_fit, color=T91_COLOR, lw=1, ls='--', alpha=0.7)
+
+    # Plot DCP
+    ax.plot(x_dcp, y_dcp, color=DCP_COLOR, lw=1.2, ls='-')
+    ax.plot(x_range, y_dcp_fit, color=DCP_COLOR, lw=1, ls='--', alpha=0.7)
+
+    # Plot CP
+    ax.errorbar(
+        cot_to_x(cp_cot_bins),
+        safe_albedo_to_y(cp_alb_bins),
+        yerr=make_asymmetric_logit_yerr(cp_alb_bins, cp_alb_std),
+        color=CP_COLOR, fmt='o-', lw=1, ms=2.5, capsize=2, capthick=0.6
+    )
+    ax.plot(x_range, y_cp_fit, color=CP_COLOR, lw=1, ls='--', alpha=0.7)
+
+    # Plot RET
+    ax.errorbar(
+        cot_to_x(ret_cot_bins),
+        safe_albedo_to_y(ret_alb_bins),
+        yerr=make_asymmetric_logit_yerr(ret_alb_bins, ret_alb_std),
+        color=RET_COLOR, fmt='o-', lw=1, ms=2.5, capsize=2, capthick=0.6
+    )
+    ax.plot(x_range, y_ret_fit, color=RET_COLOR, lw=1, ls='--', alpha=0.7)
+
+    # Plot MSK
+    ax.errorbar(
+        cot_to_x(msk_cot_bins),
+        safe_albedo_to_y(msk_alb_bins),
+        yerr=make_asymmetric_logit_yerr(msk_alb_bins, msk_alb_std),
+        color=MSK_COLOR, fmt='s-', lw=1, ms=2.5, capsize=2, capthick=0.6
+    )
+    ax.plot(x_range, y_msk_fit, color=MSK_COLOR, lw=1, ls='--', alpha=0.7)
+
+    ax.tick_params(axis='both', labelsize=7)
+
+    legend_elements = [
+        Line2D([0], [0], color=T91_COLOR, lw=2, ls='-',
+               label=rf'T91: $k$={k_t91:.2f}'),
+        Line2D([0], [0], color=DCP_COLOR, lw=2, ls='-',
+               label=rf'Dcp: $k$={k_dcp_os:.2f}'),
+        Line2D([0], [0], color=CP_COLOR, lw=2, ls='-',
+               label=rf'Cp: $k$={k_cp_os:.2f}'),
+        Line2D([0], [0], color=RET_COLOR, lw=2, ls='-',
+               label=rf'Ret: $k$={k_ret_os:.2f}'),
+        Line2D([0], [0], color=MSK_COLOR, lw=2, ls='-',
+               label=rf'Msk: $k$={k_msk_os:.2f}'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper left', fontsize=7,
+              framealpha=0.5, handlelength=1.2)
+
+
+def make_linear_figure(df, bin_edges):
+    """Create linearized figure: x = ln(COT), y = ln[Ac/(1-Ac)]."""
+    n_rows = len(oceans)
+    n_cols = len(season_keys)
+
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(2.7 * n_cols, 2.0 * n_rows),
+        sharex=True, sharey=True,
+    )
+    fig.subplots_adjust(wspace=0, hspace=0, left=0.04, right=0.98, bottom=0.04, top=0.96)
+
+    for i, ocean in enumerate(oceans):
+        for j, season_name in enumerate(season_keys):
+            ax = axes[i, j]
+            mask = (df['ocean'] == ocean) & (df['season'] == season_name)
+            sub = df[mask]
+
+            draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges)
+
+            if j == 0:
+                ax.set_ylabel(r'$\ln[A_{\mathrm{c}}/(1-A_{\mathrm{c}})]$', fontsize=9)
+
+            if i == 0:
+                ax.set_title(season_name, fontsize=10, fontweight='bold')
+
+            if i == n_rows - 1:
+                ax.set_xlabel(r'$\ln(\mathrm{COT})$', fontsize=8)
+            else:
+                ax.set_xlabel('')
+
+    fig.canvas.draw()
+    for i, ocean in enumerate(oceans):
+        ax_pos = axes[i, 0].get_position()
+        y_center = (ax_pos.y0 + ax_pos.y1) / 2
+        fig.text(
+            -0.014, y_center,
+            ocean,
+            fontsize=10, fontweight='bold',
+            rotation=90, va='center', ha='center'
+        )
+
+    out_path = os.path.join(FIG_DIR, 'figsupp_ocean_season_linear.png')
+    fig.savefig(out_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {out_path}')
 
 def make_figure(df, bin_edges):
     """Create a single figure with 8 rows (oceans) × 4 columns (seasons), no gaps."""
@@ -374,6 +560,9 @@ def main():
 
     # ---- Create single figure: 8 rows × 4 columns, no gaps ----
     make_figure(df, bin_edges)
+
+    # ---- Create linearized figure: ln(COT) vs ln[Ac/(1-Ac)] ----
+    make_linear_figure(df, bin_edges)
 
     print('All done.')
 
