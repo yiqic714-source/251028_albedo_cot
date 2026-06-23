@@ -603,10 +603,10 @@ def main(icon_style='nature'):
     # ================================================================
     solid_labels = [
         'T91',
-        'Decoupled Simu.',
-        'Coupled Simu.',
-        'Retrieval-Domain Obs.',
-        'Mask-Domain Obs.'
+        'Dcp Simu.',
+        'Cp Simu.',
+        'Ret Obs.',
+        'Msk Obs.'
     ]
 
     dashed_labels = [
