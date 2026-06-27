@@ -558,6 +558,21 @@ def draw_overestimate_bars(ax, overestimate, panel_tag):
         zorder=5,
         label=OVER_BAR_LABELS[2]
     )
+        
+    # Annotate each diamond with its percentage value.
+    for xi, tv in zip(x, total_vals):
+        if np.isfinite(tv):
+            ax.annotate(
+                f'{tv*100:.0f}%',
+                xy=(xi, tv),
+                xytext=(0, 8),
+                textcoords='offset points',
+                ha='center',
+                va='bottom',
+                fontsize=9,
+                color=OVER_BAR_COLORS[2],
+                fontweight='bold'
+            )
 
     ax.axhline(0.0, color='0.25', linewidth=1.0, linestyle='--')
     ax.set_xticks(x)
