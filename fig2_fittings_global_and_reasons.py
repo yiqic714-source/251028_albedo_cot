@@ -4,8 +4,8 @@ fig2_reason.py
 
 Layout:
   Row 1 (ax1, spans 2 cols): fig2_global_5curves plot (5 curves), legend on right outside
-  Row 2 (ax2, ax3): fig3_bias_attribution panels a and b (COT vs albedo lines)
-  Row 3 (ax4, ax5): fig3_bias_attribution panels c and d (boxplots)
+  Row 2 (ax1, ax2): fig3_bias_attribution panels a and b (COT vs albedo lines)
+  Row 3 (ax3, ax4): fig3_bias_attribution panels c and d (boxplots)
 """
 
 import os
@@ -403,24 +403,19 @@ def draw_two_boxplot(ax, data, labels, ylabel):
         )
 
     ax.set_ylabel(ylabel, fontsize=14)
-    ax.tick_params(axis='both', labelsize=11.5)
+    ax.tick_params(axis='both', labelsize=11)
     ax.axhline(1.0, color='gray', linestyle='--', alpha=0.5)
     ax.grid(axis='y', linestyle='--', alpha=0.3)
 
 
-# ============================================================
-# Main plotting function
-# ============================================================
-
-def main(icon_style='nature'):
-    print('Loading global data...')
+def prepare_global_5curves_data(verbose=True):
+    if verbose:
+        print('Loading global data for 5-curve panel...')
     df = load_global_data()
-    print(f'Total data points: {len(df)}')
-
     bin_edges = cot_range
 
-    # ---- Compute data for panel (a): 5 curves (from fig2_global_5curves) ----
-    print('Binning observational and SBDART data...')
+    if verbose:
+        print('Binning observational and SBDART data for 5-curve panel...')
     ret_cot_bins, ret_alb_bins, ret_alb_std = bin_data_by_cot(
         df, 'ret_cot_cer', 'ret_albedo', bin_edges
     )
@@ -432,14 +427,16 @@ def main(icon_style='nature'):
     alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.4)
     alb_dcp = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.4, table_folder='dcp')
 
-    print('Computing coupled SBDART albedo...')
+    if verbose:
+        print('Computing coupled SBDART albedo for 5-curve panel...')
     df['cp_albedo'] = compute_sbdart_albedo_per_point(df, 'cp')
 
     cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
         df, 'ret_cot_cer', 'cp_albedo', bin_edges
     )
 
-    print('Fitting k values...')
+    if verbose:
+        print('Fitting k values for 5-curve panel...')
     k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
     k_dcp, lnb_dcp = fit_k_b_in_logit_space(df['ret_cot_cer'], alb_dcp)
 
@@ -470,13 +467,133 @@ def main(icon_style='nature'):
         bootstrap=True
     )
 
-    alb_t91_fit = cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91))
-    alb_dcp_fit = cot_k_b_to_albedo(cot_range, k_dcp, np.exp(lnb_dcp))
-    alb_cp_fit = cot_k_b_to_albedo(cot_range, k_cp, np.exp(lnb_cp))
-    alb_ret_fit = cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret))
-    alb_msk_fit = cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk))
+    return {
+        'df': df,
+        'alb_t91': alb_t91,
+        'alb_dcp': alb_dcp,
+        'cp_cot_bins': cp_cot_bins,
+        'cp_alb_bins': cp_alb_bins,
+        'cp_alb_std': cp_alb_std,
+        'ret_cot_bins': ret_cot_bins,
+        'ret_alb_bins': ret_alb_bins,
+        'ret_alb_std': ret_alb_std,
+        'msk_cot_bins': msk_cot_bins,
+        'msk_alb_bins': msk_alb_bins,
+        'msk_alb_std': msk_alb_std,
+        'alb_t91_fit': cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91)),
+        'alb_dcp_fit': cot_k_b_to_albedo(cot_range, k_dcp, np.exp(lnb_dcp)),
+        'alb_cp_fit': cot_k_b_to_albedo(cot_range, k_cp, np.exp(lnb_cp)),
+        'alb_ret_fit': cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret)),
+        'alb_msk_fit': cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk)),
+        'k_t91': k_t91,
+        'k_dcp': k_dcp,
+        'k_cp': k_cp,
+        'k_ret': k_ret,
+        'k_msk': k_msk,
+    }
 
-    # ---- Compute data for panels (b)-(e): bias attribution (from fig3_bias_attribution) ----
+
+def draw_global_5curves_panel(
+    ax,
+    panel_data,
+    icon_style='nature',
+    tag_index=0,
+    tag_fontsize=17,
+    axis_label_fontsize=15,
+    tick_labelsize=12,
+    legend_fontsize=10.5,
+    legend_anchor=(1.15, 0.5),
+):
+    df = panel_data['df']
+    alb_dcp = panel_data['alb_dcp']
+
+    solid_labels = [
+        'T91',
+        'Dcp Simu.',
+        'Cp Simu.',
+        'Ret Obs.',
+        'Msk Obs.'
+    ]
+
+    dashed_labels = [
+        rf'$k_{{\mathrm{{T91}}}}$={panel_data["k_t91"]:.2f}',
+        rf'$k_{{\mathrm{{dcp}}}}$={panel_data["k_dcp"]:.2f}',
+        rf'$k_{{\mathrm{{cp}}}}$={panel_data["k_cp"]:.2f}',
+        rf'$k_{{\mathrm{{ret}}}}$={panel_data["k_ret"]:.2f}',
+        rf'$k_{{\mathrm{{msk}}}}$={panel_data["k_msk"]:.2f}'
+    ]
+
+    solid_handles = []
+    dashed_handles = []
+
+    h, = ax.plot(cot_range, panel_data['alb_t91'], color=T91_COLOR, lw=2, ls='-')
+    solid_handles.append(h)
+    h, = ax.plot(cot_range, panel_data['alb_t91_fit'], color=T91_COLOR, lw=1.5, ls='--', alpha=0.7)
+    dashed_handles.append(h)
+
+    sorted_idx_a = np.argsort(df['ret_cot_cer'])
+    h, = ax.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=DCP_COLOR, lw=2, ls='-')
+    solid_handles.append(h)
+    h, = ax.plot(cot_range, panel_data['alb_dcp_fit'], color=DCP_COLOR, lw=1.5, ls='--', alpha=0.7)
+    dashed_handles.append(h)
+
+    h = ax.errorbar(
+        panel_data['cp_cot_bins'], panel_data['cp_alb_bins'], yerr=panel_data['cp_alb_std'],
+        color=CP_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+    )
+    solid_handles.append(h)
+    h, = ax.plot(cot_range, panel_data['alb_cp_fit'], color=CP_COLOR, lw=1.5, ls='--', alpha=0.7)
+    dashed_handles.append(h)
+
+    h = ax.errorbar(
+        panel_data['ret_cot_bins'], panel_data['ret_alb_bins'], yerr=panel_data['ret_alb_std'],
+        color=RET_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+    )
+    solid_handles.append(h)
+    h, = ax.plot(cot_range, panel_data['alb_ret_fit'], color=RET_COLOR, lw=1.5, ls='--', alpha=0.7)
+    dashed_handles.append(h)
+
+    h = ax.errorbar(
+        panel_data['msk_cot_bins'], panel_data['msk_alb_bins'], yerr=panel_data['msk_alb_std'],
+        color=MSK_COLOR, fmt='s-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+    )
+    solid_handles.append(h)
+    h, = ax.plot(cot_range, panel_data['alb_msk_fit'], color=MSK_COLOR, lw=1.5, ls='--', alpha=0.7)
+    dashed_handles.append(h)
+
+    ax.set_xlabel('COT', fontsize=axis_label_fontsize, fontweight='medium')
+    ax.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=axis_label_fontsize, fontweight='medium')
+    ax.tick_params(axis='both', labelsize=tick_labelsize)
+    ax.set_xlim(0, 60)
+
+    ax.legend(
+        solid_handles + dashed_handles,
+        solid_labels + dashed_labels,
+        loc='center left',
+        bbox_to_anchor=legend_anchor,
+        fontsize=legend_fontsize,
+        framealpha=0.9,
+        ncol=2,
+        columnspacing=0.4,
+        labelspacing=1.5
+    )
+
+    ax.text(-0.03, 1.01, f'{format_panel_tag(tag_index, icon_style)}',
+            transform=ax.transAxes, fontsize=tag_fontsize, va='bottom', ha='left')
+
+
+# ============================================================
+# Main plotting function
+# ============================================================
+
+def main(icon_style='nature'):
+    print('Loading global data...')
+    df = load_global_data()
+    print(f'Total data points: {len(df)}')
+
+    bin_edges = cot_range
+
+    # ---- Compute data for panels (a)-(d): bias attribution (from fig3_bias_attribution) ----
     print('Computing bias attribution data...')
     season_records = process_all_oceans_by_season(n_bins=2)
 
@@ -578,188 +695,109 @@ def main(icon_style='nature'):
         })
 
     # ================================================================
-    # Create figure: 3 rows, 2 columns
-    # Row 1: ax1 in col 0 only (same width as ax2/ax4), legend to the right
-    # Rows 2-3: ax2/ax4 in col 0, ax3/ax5 in col 1
+    # Create figure: 2 rows, 2 columns.
+    # Original panels (b)-(e) are now panels (a)-(d).
     # ================================================================
     print('Plotting...')
-    fig = plt.figure(figsize=(11, 11), dpi=300)
+    fig = plt.figure(figsize=(10, 7.5), dpi=300)
 
     gs = fig.add_gridspec(
-        3, 2,
+        2, 2,
         hspace=0.30, wspace=0.30,
-        bottom=0.07, top=0.95,
-        left=0.06, right=0.82
+        bottom=0.08, top=0.95,
+        left=0.07, right=0.95
     )
 
-    ax1 = fig.add_subplot(gs[0, 0])  # Row 1, col 0: 5 curves (same width as ax2/ax4)
-    ax2 = fig.add_subplot(gs[1, 0])  # Row 2 left: fig3 panel a (3 lines)
-    ax3 = fig.add_subplot(gs[1, 1])  # Row 2 right: fig3 panel b (coupling decomposition)
-    ax4 = fig.add_subplot(gs[2, 0])  # Row 3 left: fig3 panel c (boxplot 1)
-    ax5 = fig.add_subplot(gs[2, 1])  # Row 3 right: fig3 panel d (boxplot 2)
+    ax1 = fig.add_subplot(gs[0, 0])  # Panel (a): fig3 panel a (3 lines)
+    ax2 = fig.add_subplot(gs[0, 1])  # Panel (b): fig3 panel b (coupling decomposition)
+    ax3 = fig.add_subplot(gs[1, 0])  # Panel (c): boxplot 1
+    ax4 = fig.add_subplot(gs[1, 1])  # Panel (d): boxplot 2
 
     # ================================================================
-    # Panel (a): 5 curves (from fig2_global_5curves.py)
+    # Panel (a): fig3 panel a (3 lines: Quadrature, Sbdart VS, Sbdart SW)
     # ================================================================
-    solid_labels = [
-        'T91',
-        'Dcp Simu.',
-        'Cp Simu.',
-        'Ret Obs.',
-        'Msk Obs.'
-    ]
-
-    dashed_labels = [
-        rf'$k_{{\mathrm{{T91}}}}$={k_t91:.2f}',
-        rf'$k_{{\mathrm{{dcp}}}}$={k_dcp:.2f}',
-        rf'$k_{{\mathrm{{cp}}}}$={k_cp:.2f}',
-        rf'$k_{{\mathrm{{ret}}}}$={k_ret:.2f}',
-        rf'$k_{{\mathrm{{msk}}}}$={k_msk:.2f}'
-    ]
-
-    solid_handles = []
-    dashed_handles = []
-
-    h, = ax1.plot(cot_range, alb_t91, color=T91_COLOR, lw=2, ls='-')
-    solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_t91_fit, color=T91_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
-
-    sorted_idx_a = np.argsort(df['ret_cot_cer'])
-    h, = ax1.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=DCP_COLOR, lw=2, ls='-')
-    solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_dcp_fit, color=DCP_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
-
-    h = ax1.errorbar(
-        cp_cot_bins, cp_alb_bins, yerr=cp_alb_std,
-        color=CP_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
-    )
-    solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_cp_fit, color=CP_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
-
-    h = ax1.errorbar(
-        ret_cot_bins, ret_alb_bins, yerr=ret_alb_std,
-        color=RET_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
-    )
-    solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_ret_fit, color=RET_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
-
-    h = ax1.errorbar(
-        msk_cot_bins, msk_alb_bins, yerr=msk_alb_std,
-        color=MSK_COLOR, fmt='s-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
-    )
-    solid_handles.append(h)
-    h, = ax1.plot(cot_range, alb_msk_fit, color=MSK_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
-
-    ax1.set_xlabel('COT', fontsize=15, fontweight='medium')
-    ax1.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=15, fontweight='medium')
-    ax1.tick_params(axis='both', labelsize=12)
-    ax1.set_xlim(0, 60)
-    # ax1.set_ylim(0, 1)
-
-    # Legend on the right outside
-    handles = solid_handles + dashed_handles
-    labels = solid_labels + dashed_labels
-
-    ax1.legend(
-        handles, labels,
-        loc='center left',
-        bbox_to_anchor=(1.15, 0.5),
-        fontsize=10.5,
-        framealpha=0.9,
-        ncol=2,
-        columnspacing=0.4,
-        labelspacing=1
-    )
-
-    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
-             transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-
-    # ================================================================
-    # Panel (b): fig3 panel a (3 lines: Quadrature, Sbdart VS, Sbdart SW)
-    # ================================================================
-    ax2.plot(
+    ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
         color=T91_COLOR, lw=2,
         label=rf'Quadrature: $k_\mathrm{{T91}}$={k_quad:.2f}'
     )
-    ax2.plot(
+    ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
         color=AUX_VS_COLOR, lw=2, linestyle='--',
         label=rf'Sbdart VS: $k$={k_mono:.2f}'
     )
-    ax2.plot(
+    ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
         label=rf'Sbdart SW: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
     )
-    ax2.set_xlim(0, 60)
-    ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
-    ax2.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
-    ax2.tick_params(axis='both', labelsize=12)
-    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
-             transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.legend(loc='lower right', fontsize=9.5, framealpha=0.9)
+    ax1.set_xlim(0, 60)
+    ax1.set_xlabel('COT', fontsize=14, fontweight='medium')
+    ax1.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
+    ax1.tick_params(axis='both', labelsize=11)
+    ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
+             transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
+    ax1.set_title('T91 vs. Dcp', fontsize=14, loc='center', pad=4.5)
+    ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================
-    # Panel (c): fig3 panel b (coupling decomposition lines)
+    # Panel (b): fig3 panel b (coupling decomposition lines)
     # ================================================================
     # Line 1: Decoupled SBDART (dcp) with fixed sza=54.4
-    ax3.plot(
+    ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
         label=rf'Decoupled: $k_{{\mathrm{{dcp}}}}$={k_sbd:.2f}'
     )
 
     for line_data in panel_c_lines[0:3]:
-        ax3.errorbar(
+        ax2.errorbar(
             line_data['cot_bins'], line_data['alb_bins'], yerr=line_data['alb_std'],
             color=line_data['color'], fmt='o-', lw=1.3, ms=3.5, capsize=2.6, capthick=0.8, alpha=0.7,
             label=line_data['label']
         )
 
     line_data = panel_c_lines[3] 
-    ax3.errorbar(
+    ax2.errorbar(
         line_data['cot_bins'], line_data['alb_bins'], yerr=line_data['alb_std'],
         color=line_data['color'], fmt='o-', lw=1.3, ms=3.5, capsize=2.6, capthick=0.8,
         label=line_data['label']
     )
 
-    ax3.set_xlim(0, 60)
-    ax3.set_xlabel('COT', fontsize=14, fontweight='medium')
-    ax3.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
-    ax3.tick_params(axis='both', labelsize=12)
-    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
-             transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.legend(loc='lower right', fontsize=9.5, framealpha=0.5)
+    ax2.set_xlim(0, 60)
+    ax2.set_xlabel('COT', fontsize=14, fontweight='medium')
+    ax2.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=14, fontweight='medium')
+    ax2.tick_params(axis='both', labelsize=11)
+    ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
+             transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
+    ax2.set_title('Dcp vs. Cp', fontsize=14, loc='center', pad=4.5)
+    ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
 
     # ================================================================
-    # Panel (d): fig3 panel c (boxplot: cot_disp vs aod_cot)
+    # Panel (c): fig3 panel c (boxplot: cot_disp vs aod_cot)
     # ================================================================
     draw_two_boxplot(
-        ax4,
+        ax3,
         data=[cot_disp_ratios, aod_cot_ratios],
         labels=[r'High $d_{\mathrm{COT}}$ / Low $d_{\mathrm{COT}}$', 'High AOD / Low AOD'],
         ylabel=r'Ratio of  $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
     )
-    ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
-             transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
+    ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
+             transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
+    ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
 
     # ================================================================
-    # Panel (e): fig3 panel d (boxplot: unr_fra vs aod_unr)
+    # Panel (d): fig3 panel d (boxplot: unr_fra vs aod_unr)
     # ================================================================
     draw_two_boxplot(
-        ax5,
+        ax4,
         data=[unr_fra_ratios, aod_unr_ratios],
         labels=['High URF / Low URF', 'High AOD / Low AOD'],
         ylabel=r'Ratio of  $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
-    ax5.text(-0.01, 1.01, f'{format_panel_tag(4, icon_style)}',
-             transform=ax5.transAxes, fontsize=17, va='bottom', ha='left')
+    ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
+             transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
+    ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
 
     # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')

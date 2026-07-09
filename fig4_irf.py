@@ -34,8 +34,8 @@ MAP_EXTENT = [-180, 180, -60, 60]
 MAP_ASPECT = 3.0          # physical width / height for 360 deg x 120 deg
 
 PANEL_TITLES = {
-    'ret': r'Corrected IRF$_{\mathrm{aci}}$ Using Ret Obs.',
-    'msk': r'Corrected IRF$_{\mathrm{aci}}$ Using Msk Obs.',
+    'ret': r'IRF$_{\mathrm{aci}}$ Distribution Using Ret Obs.',
+    'msk': r'IRF$_{\mathrm{aci}}$ Distribution Using Msk Obs.',
 }
 
 # T91/uncorrected parameters used for the third bar in the separate ocean PNGs
@@ -181,6 +181,9 @@ def compute_irf_data():
     ocean_irf : dict
         ocean_irf[method][ocean][variant] = area-weighted IRF_aci.
         method is 'ret' or 'msk'; variant is '1030', 'day', or 'orig'.
+    ocean_area : dict
+        ocean_area[method][ocean][variant] = valid grid-cell area used for
+        each ocean-level IRF_aci average.
     grid_irf : pandas.DataFrame
         Grid-level corrected Ac_1030 IRF_aci for contour-line maps.
         Columns: method, lat, lon, irf.
@@ -225,6 +228,7 @@ def compute_irf_data():
     seasonal_grid = merged_df.groupby(['ocean', 'season', 'lat', 'lon']).agg(agg_cols).reset_index()
 
     ocean_irf = {method: {ocean: {} for ocean in oceans} for method in methods}
+    ocean_area = {method: {ocean: {} for ocean in oceans} for method in methods}
     accum = {
         method: {
             ocean: {
@@ -365,6 +369,7 @@ def compute_irf_data():
                 ocean_irf[method][ocean][variant] = (
                     item['sum'] / item['area'] if item['area'] > 0 else np.nan
                 )
+                ocean_area[method][ocean][variant] = item['area']
 
     overestimate = {}
     for group_key, _, _, _ in OVER_GROUPS:
@@ -414,7 +419,7 @@ def compute_irf_data():
     else:
         grid_irf = pd.DataFrame(columns=['method', 'lat', 'lon', 'irf'])
 
-    return ocean_irf, grid_irf, overestimate
+    return ocean_irf, ocean_area, grid_irf, overestimate
 
 
 # ============================================================
@@ -578,7 +583,7 @@ def draw_overestimate_bars(ax, overestimate, panel_tag):
     ax.set_xticks(x)
     ax.set_xticklabels(group_labels, fontsize=11)
     ax.set_ylabel('Overestimate', fontsize=12)
-    ax.set_title('Global-Mean Overestimate Decomposition', fontsize=13, pad=7)
+    ax.set_title('Decomposing the Overestimate of 4 Methods ', fontsize=13, pad=7)
     ax.text(-0.01, 1.01, panel_tag,
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
 
@@ -666,17 +671,30 @@ def save_ocean_bar_pngs(ocean_irf):
             print(f'Saved: {out_path}')
 
 
-def save_bar_legend_pngs(ocean_irf):
+def area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant):
+    vals = np.asarray([
+        ocean_irf[method][ocean].get(variant, np.nan)
+        for ocean in oceans
+    ], dtype=float)
+    weights = np.asarray([
+        ocean_area[method][ocean].get(variant, np.nan)
+        for ocean in oceans
+    ], dtype=float)
+
+    good = np.isfinite(vals) & np.isfinite(weights) & (weights > 0)
+    if not np.any(good):
+        return np.nan
+
+    return np.sum(vals[good] * weights[good]) / np.sum(weights[good])
+
+
+def save_bar_legend_pngs(ocean_irf, ocean_area):
     for method in ['ret', 'msk']:
         colors = BAR_PALETTES[method]['irf']
 
         labels = []
         for i, variant in enumerate(BAR_VARIANTS):
-            irf_vals = [
-                ocean_irf[method][ocean].get(variant, np.nan)
-                for ocean in oceans
-            ]
-            irf_mean = np.nanmean(irf_vals)
+            irf_mean = area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant)
 
             labels.append(
                 rf'{BAR_LABELS[method][i]}: {irf_mean:.2f} W m$^{{-2}}$'
@@ -716,7 +734,7 @@ def save_bar_legend_pngs(ocean_irf):
 # ============================================================
 
 def main():
-    ocean_irf, grid_irf, overestimate = compute_irf_data()
+    ocean_irf, ocean_area, grid_irf, overestimate = compute_irf_data()
     levels = get_common_contour_levels(grid_irf)
 
     fig = plt.figure(figsize=(12, 12.0))
@@ -746,7 +764,7 @@ def main():
 
     # Separate outputs: 16 ocean bar PNGs + 2 legend PNGs.
     save_ocean_bar_pngs(ocean_irf)
-    save_bar_legend_pngs(ocean_irf)
+    save_bar_legend_pngs(ocean_irf, ocean_area)
 
 
 if __name__ == '__main__':

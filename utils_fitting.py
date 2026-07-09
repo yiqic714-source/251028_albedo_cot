@@ -312,4 +312,4 @@ def format_panel_tag(panel_idx, icon_style):
         letter = chr(ord('A') + panel_idx)
         return rf'$\mathbf{{{letter}}}$'
     letter = chr(ord('a') + panel_idx)
-    return rf'$\mathbf{{({letter})}}$'
+    return rf'$\mathbf{{{letter}}}$'

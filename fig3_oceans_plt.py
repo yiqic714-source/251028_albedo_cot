@@ -4,6 +4,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from shapely.geometry import box
 from shapely.ops import unary_union
+from utils_fitting import format_panel_tag
 
 # Define ocean regions with coordinates (west, south, east, north)
 oceans = {
@@ -48,15 +49,6 @@ oceans = {
         [20, -60, 130, -20]
     ]
 }
-
-
-def format_panel_tag(panel_idx, icon_style):
-    if icon_style == 'science':
-        letter = chr(ord('A') + panel_idx)
-        return rf'$\mathbf{{{letter}}}$'
-
-    letter = chr(ord('a') + panel_idx)
-    return rf'$\mathbf{{({letter})}}$'
 
 
 def draw_ocean_boundary(ax, regions, color='0.25', linestyle='-', linewidth=1.1):
