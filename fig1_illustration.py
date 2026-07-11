@@ -68,7 +68,7 @@ if __name__ == "__main__":
     # -------------------------
     # (c) Former Fig. 2a
     # -------------------------
-    panel_c_data = prepare_global_5curves_data(verbose=True)
+    panel_c_data = prepare_global_5curves_data(verbose=True, include_simulations=False)
     draw_global_5curves_panel(
         ax3,
         panel_c_data,
@@ -79,6 +79,7 @@ if __name__ == "__main__":
         tick_labelsize=8,
         legend_fontsize=7.2,
         legend_anchor=(1.06, 0.5),
+        include_simulations=False,
     )
     ax3.set_title('Relationships', fontsize=8.5, loc='center', pad=4.5)
 

@@ -408,14 +408,14 @@ def draw_two_boxplot(ax, data, labels, ylabel):
     ax.grid(axis='y', linestyle='--', alpha=0.3)
 
 
-def prepare_global_5curves_data(verbose=True):
+def prepare_global_5curves_data(verbose=True, include_simulations=True):
     if verbose:
         print('Loading global data for 5-curve panel...')
     df = load_global_data()
     bin_edges = cot_range
 
     if verbose:
-        print('Binning observational and SBDART data for 5-curve panel...')
+        print('Binning observational data for relationship panel...')
     ret_cot_bins, ret_alb_bins, ret_alb_std = bin_data_by_cot(
         df, 'ret_cot_cer', 'ret_albedo', bin_edges
     )
@@ -425,29 +425,10 @@ def prepare_global_5curves_data(verbose=True):
     )
 
     alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.4)
-    alb_dcp = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.4, table_folder='dcp')
 
     if verbose:
-        print('Computing coupled SBDART albedo for 5-curve panel...')
-    df['cp_albedo'] = compute_sbdart_albedo_per_point(df, 'cp')
-
-    cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
-        df, 'ret_cot_cer', 'cp_albedo', bin_edges
-    )
-
-    if verbose:
-        print('Fitting k values for 5-curve panel...')
+        print('Fitting k values for relationship panel...')
     k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
-    k_dcp, lnb_dcp = fit_k_b_in_logit_space(df['ret_cot_cer'], alb_dcp)
-
-    k_cp, lnb_cp, _, _ = mc_fit(
-        df['ret_cot_cer'].values,
-        df['cp_albedo'].values,
-        cot_std=0.0,
-        albedo_std=0.03,
-        n_mc=300,
-        bootstrap=True
-    )
 
     k_ret, lnb_ret, _, _ = mc_fit(
         df['ret_cot_cer'].values,
@@ -467,13 +448,9 @@ def prepare_global_5curves_data(verbose=True):
         bootstrap=True
     )
 
-    return {
+    panel_data = {
         'df': df,
         'alb_t91': alb_t91,
-        'alb_dcp': alb_dcp,
-        'cp_cot_bins': cp_cot_bins,
-        'cp_alb_bins': cp_alb_bins,
-        'cp_alb_std': cp_alb_std,
         'ret_cot_bins': ret_cot_bins,
         'ret_alb_bins': ret_alb_bins,
         'ret_alb_std': ret_alb_std,
@@ -481,16 +458,45 @@ def prepare_global_5curves_data(verbose=True):
         'msk_alb_bins': msk_alb_bins,
         'msk_alb_std': msk_alb_std,
         'alb_t91_fit': cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91)),
-        'alb_dcp_fit': cot_k_b_to_albedo(cot_range, k_dcp, np.exp(lnb_dcp)),
-        'alb_cp_fit': cot_k_b_to_albedo(cot_range, k_cp, np.exp(lnb_cp)),
         'alb_ret_fit': cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret)),
         'alb_msk_fit': cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk)),
         'k_t91': k_t91,
-        'k_dcp': k_dcp,
-        'k_cp': k_cp,
         'k_ret': k_ret,
         'k_msk': k_msk,
     }
+
+    if include_simulations:
+        if verbose:
+            print('Computing SBDART simulation data for relationship panel...')
+        alb_dcp = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.4, table_folder='dcp')
+        df['cp_albedo'] = compute_sbdart_albedo_per_point(df, 'cp')
+
+        cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
+            df, 'ret_cot_cer', 'cp_albedo', bin_edges
+        )
+
+        k_dcp, lnb_dcp = fit_k_b_in_logit_space(df['ret_cot_cer'], alb_dcp)
+        k_cp, lnb_cp, _, _ = mc_fit(
+            df['ret_cot_cer'].values,
+            df['cp_albedo'].values,
+            cot_std=0.0,
+            albedo_std=0.03,
+            n_mc=300,
+            bootstrap=True
+        )
+
+        panel_data.update({
+            'alb_dcp': alb_dcp,
+            'cp_cot_bins': cp_cot_bins,
+            'cp_alb_bins': cp_alb_bins,
+            'cp_alb_std': cp_alb_std,
+            'alb_dcp_fit': cot_k_b_to_albedo(cot_range, k_dcp, np.exp(lnb_dcp)),
+            'alb_cp_fit': cot_k_b_to_albedo(cot_range, k_cp, np.exp(lnb_cp)),
+            'k_dcp': k_dcp,
+            'k_cp': k_cp,
+        })
+
+    return panel_data
 
 
 def draw_global_5curves_panel(
@@ -503,25 +509,28 @@ def draw_global_5curves_panel(
     tick_labelsize=12,
     legend_fontsize=10.5,
     legend_anchor=(1.15, 0.5),
+    include_simulations=True,
 ):
     df = panel_data['df']
-    alb_dcp = panel_data['alb_dcp']
 
     solid_labels = [
         'T91',
-        'Dcp Simu.',
-        'Cp Simu.',
         'Ret Obs.',
         'Msk Obs.'
     ]
 
     dashed_labels = [
         rf'$k_{{\mathrm{{T91}}}}$={panel_data["k_t91"]:.2f}',
-        rf'$k_{{\mathrm{{dcp}}}}$={panel_data["k_dcp"]:.2f}',
-        rf'$k_{{\mathrm{{cp}}}}$={panel_data["k_cp"]:.2f}',
         rf'$k_{{\mathrm{{ret}}}}$={panel_data["k_ret"]:.2f}',
         rf'$k_{{\mathrm{{msk}}}}$={panel_data["k_msk"]:.2f}'
     ]
+
+    if include_simulations:
+        solid_labels[1:1] = ['Dcp Simu.', 'Cp Simu.']
+        dashed_labels[1:1] = [
+            rf'$k_{{\mathrm{{dcp}}}}$={panel_data["k_dcp"]:.2f}',
+            rf'$k_{{\mathrm{{cp}}}}$={panel_data["k_cp"]:.2f}'
+        ]
 
     solid_handles = []
     dashed_handles = []
@@ -531,19 +540,21 @@ def draw_global_5curves_panel(
     h, = ax.plot(cot_range, panel_data['alb_t91_fit'], color=T91_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
-    sorted_idx_a = np.argsort(df['ret_cot_cer'])
-    h, = ax.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=DCP_COLOR, lw=2, ls='-')
-    solid_handles.append(h)
-    h, = ax.plot(cot_range, panel_data['alb_dcp_fit'], color=DCP_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
+    if include_simulations:
+        sorted_idx_a = np.argsort(df['ret_cot_cer'])
+        alb_dcp = panel_data['alb_dcp']
+        h, = ax.plot(df['ret_cot_cer'].values[sorted_idx_a], alb_dcp[sorted_idx_a], color=DCP_COLOR, lw=2, ls='-')
+        solid_handles.append(h)
+        h, = ax.plot(cot_range, panel_data['alb_dcp_fit'], color=DCP_COLOR, lw=1.5, ls='--', alpha=0.7)
+        dashed_handles.append(h)
 
-    h = ax.errorbar(
-        panel_data['cp_cot_bins'], panel_data['cp_alb_bins'], yerr=panel_data['cp_alb_std'],
-        color=CP_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
-    )
-    solid_handles.append(h)
-    h, = ax.plot(cot_range, panel_data['alb_cp_fit'], color=CP_COLOR, lw=1.5, ls='--', alpha=0.7)
-    dashed_handles.append(h)
+        h = ax.errorbar(
+            panel_data['cp_cot_bins'], panel_data['cp_alb_bins'], yerr=panel_data['cp_alb_std'],
+            color=CP_COLOR, fmt='o-', lw=1.5, ms=3.5, capsize=3, capthick=0.8
+        )
+        solid_handles.append(h)
+        h, = ax.plot(cot_range, panel_data['alb_cp_fit'], color=CP_COLOR, lw=1.5, ls='--', alpha=0.7)
+        dashed_handles.append(h)
 
     h = ax.errorbar(
         panel_data['ret_cot_bins'], panel_data['ret_alb_bins'], yerr=panel_data['ret_alb_std'],
@@ -737,7 +748,7 @@ def main(icon_style='nature'):
     ax1.tick_params(axis='both', labelsize=11)
     ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
              transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-    ax1.set_title('T91 vs. Dcp', fontsize=14, loc='center', pad=4.5)
+    ax1.set_title('T91 vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
     ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================
@@ -770,7 +781,7 @@ def main(icon_style='nature'):
     ax2.tick_params(axis='both', labelsize=11)
     ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
              transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.set_title('Dcp vs. Cp', fontsize=14, loc='center', pad=4.5)
+    ax2.set_title('Dcp Simu. vs. Cp Simu.', fontsize=14, loc='center', pad=4.5)
     ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
 
     # ================================================================
@@ -784,7 +795,7 @@ def main(icon_style='nature'):
     )
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
+    ax3.set_title('Cp Simu. vs. Ret Obs.', fontsize=14, loc='center', pad=4.5)
 
     # ================================================================
     # Panel (d): fig3 panel d (boxplot: unr_fra vs aod_unr)
@@ -797,7 +808,7 @@ def main(icon_style='nature'):
     )
     ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
              transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
-    ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
+    ax4.set_title('Ret Obs. vs. Msk Obs.', fontsize=14, loc='center', pad=4.5)
 
     # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')
