@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 fig2_reason.py
 
@@ -47,11 +47,6 @@ AUX_VS_COLOR = "#606581"
 AUX_SURFACE_COLOR = "#F354F3"
 AUX_GAS_COLOR = "#31B704"
 AUX_SZA_COLOR = "#025D37"
-
-PANEL_A_COLORS = [T91_COLOR, DCP_COLOR, CP_COLOR, RET_COLOR, MSK_COLOR]
-LINESTYLE = ['-', '-', '--', ':', '-']
-BOX_COLORS = ['coral', 'steelblue']
-
 
 # ============================================================
 # Shared helper functions (from fig2_global_5curves.py)
@@ -310,7 +305,7 @@ def calc_slope_diff_for_bin(bin_df, mode, x2):
     raise ValueError(f'Unsupported mode: {mode}')
 
 
-def calc_high_low_ratio(df, split_col, mode, x2, n_bins=2):
+def calc_low_high_delta_k(df, split_col, mode, x2, n_bins=2):
     labels, edges = split_data_by_percentile(df.copy(), split_col, n_bins)
 
     bin_values = {}
@@ -324,10 +319,7 @@ def calc_high_low_ratio(df, split_col, mode, x2, n_bins=2):
     low = bin_values.get(0, np.nan)
     high = bin_values.get(1, np.nan)
 
-    if np.isfinite(low) and np.isfinite(high) and low > 0:
-        return high / low
-
-    return np.nan
+    return low, high
 
 
 def process_all_oceans_by_season(n_bins=2):
@@ -345,50 +337,45 @@ def process_all_oceans_by_season(n_bins=2):
             records.append({
                 'Ocean': ocean,
                 'Season': season_name,
-                'cot_disp_ratio': calc_high_low_ratio(df, 'cot_disp', 'cot_disp', x2, n_bins),
-                'unr_fra_ratio': calc_high_low_ratio(df, 'unr_fra', 'unr_fra', x2, n_bins),
-                'aod_cot_ratio': calc_high_low_ratio(df, 'aod_mod08', 'cot_disp', x2, n_bins),
-                'aod_unr_ratio': calc_high_low_ratio(df, 'aod_mod08', 'unr_fra', x2, n_bins),
+                'cot_disp_delta_k': calc_low_high_delta_k(df, 'cot_disp', 'cot_disp', x2, n_bins),
+                'unr_fra_delta_k': calc_low_high_delta_k(df, 'unr_fra', 'unr_fra', x2, n_bins),
+                'aod_cot_delta_k': calc_low_high_delta_k(df, 'aod_mod08', 'cot_disp', x2, n_bins),
+                'aod_unr_delta_k': calc_low_high_delta_k(df, 'aod_mod08', 'unr_fra', x2, n_bins),
             })
 
     return records
 
 
-def draw_two_boxplot(ax, data, labels, ylabel):
-    BOX_EDGE_COLORS = ['#8B0000', '#003366']   # 深红、深蓝
-    BOX_FACE_COLORS = ['#F6B6B6', '#B7D4F0']   # 浅红、浅蓝
+def draw_delta_k_boxplot(ax, data, labels, ylabel):
+    box_edge_colors = ['#8B0000', '#8B0000', '#003366', '#003366']
+    box_face_colors = ['#F6D1D1', '#F08A8A', '#D8E8F7', '#79AEDD']
 
     bp = ax.boxplot(
         data,
         tick_labels=labels,
         patch_artist=True,
-        widths=0.4,
+        widths=0.45,
         showfliers=False
     )
 
-    # 箱体：深色边框 + 浅色填充
-    for box, edge_color, face_color in zip(bp['boxes'], BOX_EDGE_COLORS, BOX_FACE_COLORS):
+    for box, edge_color, face_color in zip(bp['boxes'], box_edge_colors, box_face_colors):
         box.set_facecolor(face_color)
         box.set_edgecolor(edge_color)
         box.set_linewidth(2)
-        box.set_alpha(0.65)
+        box.set_alpha(0.72)
 
-    # 中位数线
-    for median, color in zip(bp['medians'], BOX_EDGE_COLORS):
+    for median, color in zip(bp['medians'], box_edge_colors):
         median.set_color(color)
         median.set_linewidth(2)
 
-    # whiskers
     for i, whisker in enumerate(bp['whiskers']):
-        whisker.set_color(BOX_EDGE_COLORS[i // 2])
+        whisker.set_color(box_edge_colors[i // 2])
         whisker.set_linewidth(1.5)
 
-    # caps
     for i, cap in enumerate(bp['caps']):
-        cap.set_color(BOX_EDGE_COLORS[i // 2])
+        cap.set_color(box_edge_colors[i // 2])
         cap.set_linewidth(1.5)
 
-    # 散点
     rng = np.random.default_rng(42)
     for i, y in enumerate(data, start=1):
         y = np.asarray(y, dtype=float)
@@ -403,8 +390,9 @@ def draw_two_boxplot(ax, data, labels, ylabel):
         )
 
     ax.set_ylabel(ylabel, fontsize=14)
-    ax.tick_params(axis='both', labelsize=11)
-    ax.axhline(1.0, color='gray', linestyle='--', alpha=0.5)
+    ax.tick_params(axis='x', labelsize=10)
+    ax.tick_params(axis='y', labelsize=11)
+    ax.axhline(0.0, color='gray', linestyle='--', alpha=0.5)
     ax.grid(axis='y', linestyle='--', alpha=0.3)
 
 
@@ -608,10 +596,15 @@ def main(icon_style='nature'):
     print('Computing bias attribution data...')
     season_records = process_all_oceans_by_season(n_bins=2)
 
-    cot_disp_ratios = [r['cot_disp_ratio'] for r in season_records if np.isfinite(r['cot_disp_ratio'])]
-    aod_cot_ratios = [r['aod_cot_ratio'] for r in season_records if np.isfinite(r['aod_cot_ratio'])]
-    unr_fra_ratios = [r['unr_fra_ratio'] for r in season_records if np.isfinite(r['unr_fra_ratio'])]
-    aod_unr_ratios = [r['aod_unr_ratio'] for r in season_records if np.isfinite(r['aod_unr_ratio'])]
+    cot_disp_low = [r['cot_disp_delta_k'][0] for r in season_records if np.isfinite(r['cot_disp_delta_k'][0])]
+    cot_disp_high = [r['cot_disp_delta_k'][1] for r in season_records if np.isfinite(r['cot_disp_delta_k'][1])]
+    aod_cot_low = [r['aod_cot_delta_k'][0] for r in season_records if np.isfinite(r['aod_cot_delta_k'][0])]
+    aod_cot_high = [r['aod_cot_delta_k'][1] for r in season_records if np.isfinite(r['aod_cot_delta_k'][1])]
+
+    unr_fra_low = [r['unr_fra_delta_k'][0] for r in season_records if np.isfinite(r['unr_fra_delta_k'][0])]
+    unr_fra_high = [r['unr_fra_delta_k'][1] for r in season_records if np.isfinite(r['unr_fra_delta_k'][1])]
+    aod_unr_low = [r['aod_unr_delta_k'][0] for r in season_records if np.isfinite(r['aod_unr_delta_k'][0])]
+    aod_unr_high = [r['aod_unr_delta_k'][1] for r in season_records if np.isfinite(r['aod_unr_delta_k'][1])]
 
     # ---- Compute data for panel (b): fig3 panel a (3 lines) ----
     print('Computing SBDART comparison data for panel (b)...')
@@ -748,7 +741,7 @@ def main(icon_style='nature'):
     ax1.tick_params(axis='both', labelsize=11)
     ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
              transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-    ax1.set_title('T91 vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
+    ax1.set_title('T91 vs. Dcp', fontsize=14, loc='center', pad=4.5)
     ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================
@@ -781,34 +774,44 @@ def main(icon_style='nature'):
     ax2.tick_params(axis='both', labelsize=11)
     ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
              transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.set_title('Dcp Simu. vs. Cp Simu.', fontsize=14, loc='center', pad=4.5)
+    ax2.set_title('Dcp vs. Cp', fontsize=14, loc='center', pad=4.5)
     ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
 
     # ================================================================
     # Panel (c): fig3 panel c (boxplot: cot_disp vs aod_cot)
     # ================================================================
-    draw_two_boxplot(
+    draw_delta_k_boxplot(
         ax3,
-        data=[cot_disp_ratios, aod_cot_ratios],
-        labels=[r'High $d_{\mathrm{COT}}$ / Low $d_{\mathrm{COT}}$', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of  $k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
+        data=[cot_disp_low, cot_disp_high, aod_cot_low, aod_cot_high],
+        labels=[
+            r'Low $d_{\mathrm{COT}}$',
+            r'High $d_{\mathrm{COT}}$',
+            'Low AOD',
+            'High AOD'
+        ],
+        ylabel=r'$k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
     )
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.set_title('Cp Simu. vs. Ret Obs.', fontsize=14, loc='center', pad=4.5)
+    ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
 
     # ================================================================
     # Panel (d): fig3 panel d (boxplot: unr_fra vs aod_unr)
     # ================================================================
-    draw_two_boxplot(
+    draw_delta_k_boxplot(
         ax4,
-        data=[unr_fra_ratios, aod_unr_ratios],
-        labels=['High URF / Low URF', 'High AOD / Low AOD'],
-        ylabel=r'Ratio of  $k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
+        data=[unr_fra_low, unr_fra_high, aod_unr_low, aod_unr_high],
+        labels=[
+            'Low URF',
+            'High URF',
+            'Low AOD',
+            'High AOD'
+        ],
+        ylabel=r'$k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
     ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
              transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
-    ax4.set_title('Ret Obs. vs. Msk Obs.', fontsize=14, loc='center', pad=4.5)
+    ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
 
     # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')
@@ -819,3 +822,4 @@ def main(icon_style='nature'):
 
 if __name__ == '__main__':
     main(icon_style='nature')
+
