@@ -204,6 +204,7 @@ def calc_profiles(data, lon, lat, month, method):  # 新增method参数
             elif method == 'dcp':
                 wh = 1e-30 * np.ones(z.shape)
                 wo = 1e-30 * np.ones(z.shape)
+                z = z * 6
 
             results[oc][se] = dict(
                 z=z, t=t, wh=wh, wo=wo, p=pressure[:len(z)]

@@ -9,9 +9,11 @@ Layout:
 """
 
 import os
+import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy.stats import wilcoxon
 
 from utils_fitting import (
     oceans, season_dict, cot_range, albedo_to_y,
@@ -390,10 +392,84 @@ def draw_delta_k_boxplot(ax, data, labels, ylabel):
         )
 
     ax.set_ylabel(ylabel, fontsize=14)
-    ax.tick_params(axis='x', labelsize=10)
+    ax.tick_params(axis='x', labelsize=11.5)
     ax.tick_params(axis='y', labelsize=11)
     ax.axhline(0.0, color='gray', linestyle='--', alpha=0.5)
     ax.grid(axis='y', linestyle='--', alpha=0.3)
+
+
+def get_paired_delta_k_values(records, key):
+    low_vals = []
+    high_vals = []
+
+    for record in records:
+        low, high = record[key]
+        if np.isfinite(low) and np.isfinite(high):
+            low_vals.append(low)
+            high_vals.append(high)
+
+    return np.asarray(low_vals, dtype=float), np.asarray(high_vals, dtype=float)
+
+
+def calc_paired_wilcoxon_p(low_vals, high_vals):
+    if len(low_vals) < 2:
+        return np.nan
+
+    diff = high_vals - low_vals
+    if np.allclose(diff, 0.0, equal_nan=False):
+        return 1.0
+
+    try:
+        _, p_value = wilcoxon(low_vals, high_vals, zero_method='wilcox', alternative='two-sided')
+    except ValueError:
+        return np.nan
+
+    return p_value
+
+
+def format_p_value(p_value):
+    if not np.isfinite(p_value):
+        return 'p=n/a'
+    if p_value < 0.001:
+        return 'p<0.001'
+    return f'p={p_value:.3f}'
+
+
+def add_p_value_annotation(ax, x1, x2, data1, data2, p_value):
+    values = np.concatenate([
+        np.asarray(data1, dtype=float),
+        np.asarray(data2, dtype=float)
+    ])
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return
+
+    y_min, y_max = ax.get_ylim()
+    y_range = y_max - y_min
+    if y_range <= 0:
+        y_range = 1.0
+
+    y = max(np.nanmax(values), y_max - 0.18 * y_range) + 0.04 * y_range
+    h = 0.025 * y_range
+    text_y = y + h + 0.015 * y_range
+
+    ax.plot(
+        [x1, x1, x2, x2],
+        [y, y + h, y + h, y],
+        color='0.25',
+        lw=1.0,
+        clip_on=False
+    )
+    ax.text(
+        (x1 + x2) / 2,
+        text_y,
+        format_p_value(p_value),
+        ha='center',
+        va='bottom',
+        fontsize=9.5,
+        color='0.15'
+    )
+    ax.set_ylim(y_min, max(y_max, text_y + 0.06 * y_range))
 
 
 def prepare_global_5curves_data(verbose=True, include_simulations=True):
@@ -606,6 +682,16 @@ def main(icon_style='nature'):
     aod_unr_low = [r['aod_unr_delta_k'][0] for r in season_records if np.isfinite(r['aod_unr_delta_k'][0])]
     aod_unr_high = [r['aod_unr_delta_k'][1] for r in season_records if np.isfinite(r['aod_unr_delta_k'][1])]
 
+    cot_disp_pair_low, cot_disp_pair_high = get_paired_delta_k_values(season_records, 'cot_disp_delta_k')
+    aod_cot_pair_low, aod_cot_pair_high = get_paired_delta_k_values(season_records, 'aod_cot_delta_k')
+    unr_fra_pair_low, unr_fra_pair_high = get_paired_delta_k_values(season_records, 'unr_fra_delta_k')
+    aod_unr_pair_low, aod_unr_pair_high = get_paired_delta_k_values(season_records, 'aod_unr_delta_k')
+
+    p_cot_disp = calc_paired_wilcoxon_p(cot_disp_pair_low, cot_disp_pair_high)
+    p_aod_cot = calc_paired_wilcoxon_p(aod_cot_pair_low, aod_cot_pair_high)
+    p_unr_fra = calc_paired_wilcoxon_p(unr_fra_pair_low, unr_fra_pair_high)
+    p_aod_unr = calc_paired_wilcoxon_p(aod_unr_pair_low, aod_unr_pair_high)
+
     # ---- Compute data for panel (b): fig3 panel a (3 lines) ----
     print('Computing SBDART comparison data for panel (b)...')
     alb_sbd = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.5, table_folder='dcp')
@@ -613,7 +699,7 @@ def main(icon_style='nature'):
     mask = np.isfinite(y_fit)
     k_sbd, _ = np.polyfit(cot_to_x(df['ret_cot_cer'])[mask], y_fit[mask], 1)
 
-    alb_mono = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.5, table_folder='dcp_mono')
+    alb_mono = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.5, table_folder='dcp_0p4to0p7')
     y_fit = albedo_to_y(alb_mono)
     mask = np.isfinite(y_fit)
     k_mono, _ = np.polyfit(cot_to_x(df['ret_cot_cer'])[mask], y_fit[mask], 1)
@@ -630,8 +716,8 @@ def main(icon_style='nature'):
     # --- Lines 2-3: Fixed sza=54.4, per-point cot, with errorbar ---
     lookup_folders_fixed_sza = ['gasdcp_surcp', 'surdcp_gascp']
     lookup_labels_fixed_sza = [
-        r'$A_{\mathrm{sfc}}$ Coupled: $k$=',
-        r'Gas Coupled: $k$='
+        r'$A_{\mathrm{sfc}}$ Coupled',
+        r'Gas Coupled'
     ]
     lookup_colors_fixed_sza = [AUX_SURFACE_COLOR, AUX_GAS_COLOR]
 
@@ -661,13 +747,13 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_fixed_sza[idx_offset],
-            'label': f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f}'
+            'label': lookup_labels_fixed_sza[idx_offset]
         })
 
     # --- Lines 4-5: Per-point sza, with errorbar ---
     lookup_folders_sza = ['dcp', 'cp']
     lookup_labels_sza = [
-        r'SZA Coupled: $k=$',
+        r'SZA Coupled',
         r'All Coupled: $k_{\mathrm{cp}}=$'
     ]
     lookup_colors_sza = [AUX_SZA_COLOR, CP_COLOR]
@@ -695,7 +781,11 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_sza[idx_offset],
-            'label': f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
+            'label': (
+                lookup_labels_sza[idx_offset]
+                if folder == 'dcp'
+                else f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
+            )
         })
 
     # ================================================================
@@ -723,12 +813,12 @@ def main(icon_style='nature'):
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
         color=T91_COLOR, lw=2,
-        label=rf'Quadrature: $k_\mathrm{{T91}}$={k_quad:.2f}'
+        label=rf'Analytical: $k_\mathrm{{T91}}$={k_quad:.2f}'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
         color=AUX_VS_COLOR, lw=2, linestyle='--',
-        label=rf'Sbdart VS: $k$={k_mono:.2f}'
+        label='Sbdart VS'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
@@ -791,6 +881,8 @@ def main(icon_style='nature'):
         ],
         ylabel=r'$k_{\mathrm{cp}}-k_{\mathrm{ret}}$'
     )
+    add_p_value_annotation(ax3, 1, 2, cot_disp_low, cot_disp_high, p_cot_disp)
+    add_p_value_annotation(ax3, 3, 4, aod_cot_low, aod_cot_high, p_aod_cot)
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
     ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
@@ -809,6 +901,8 @@ def main(icon_style='nature'):
         ],
         ylabel=r'$k_{\mathrm{ret}}-k_{\mathrm{msk}}$'
     )
+    add_p_value_annotation(ax4, 1, 2, unr_fra_low, unr_fra_high, p_unr_fra)
+    add_p_value_annotation(ax4, 3, 4, aod_unr_low, aod_unr_high, p_aod_unr)
     ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
              transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
     ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
