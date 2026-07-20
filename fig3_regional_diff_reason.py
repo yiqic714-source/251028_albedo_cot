@@ -15,6 +15,12 @@ os.makedirs(FIG_DIR, exist_ok=True)
 
 MIN_COT = 2.5
 MIN_CF = 0.1
+HOLLOW_OCEANS = {'TIO', 'TAO', 'TPO'}
+color_order = [0, 2, 1, 3, 6, 4, 5, 7]
+ocean_colors = {
+    o: plt.cm.tab10(color_order[i % len(color_order)]) 
+    for i, o in enumerate(oceans)
+}
 
 
 def filter_merged_data(df):
@@ -109,22 +115,23 @@ def plot_scatter_points(ax, points_df, x_col, y_col):
         'SON': '^',
         'DJF': 'D',
     }
-    ocean_colors = {
-        o: plt.cm.tab10(i % 10) for i, o in enumerate(oceans)
-    }
 
     for ocean in oceans:
         for season in season_dict.keys():
             sub = points_df[(points_df['ocean'] == ocean) & (points_df['season'] == season)]
             if len(sub) == 0:
                 continue
+            color = ocean_colors[ocean]
+            is_hollow = ocean in HOLLOW_OCEANS
             ax.scatter(
                 sub[x_col],
                 sub[y_col],
-                s=58,
-                alpha=0.9,
+                s=58 if is_hollow else 68,
+                alpha=0.85,
                 marker=season_markers.get(season, 'o'),
-                color=ocean_colors[ocean],
+                facecolors='none' if is_hollow else color,
+                edgecolors=color,
+                linewidths=2.4 if is_hollow else 0.3,
             )
 
 
@@ -161,9 +168,6 @@ def create_shared_legend():
         'SON': '^',
         'DJF': 'D',
     }
-    ocean_colors = {
-        o: plt.cm.tab10(i % 10) for i, o in enumerate(oceans)
-    }
 
     season_labels = list(season_dict.keys())
     ocean_labels = list(oceans)
@@ -171,10 +175,19 @@ def create_shared_legend():
         s: plt.Line2D([0], [0], marker=season_markers[s], color='black', linestyle='', markersize=7)
         for s in season_labels
     }
-    ocean_handles = {
-        o: plt.Line2D([0], [0], marker='o', color=ocean_colors[o], linestyle='', markersize=7)
-        for o in ocean_labels
-    }
+    ocean_handles = {}
+    for o in ocean_labels:
+        color = ocean_colors[o]
+        is_hollow = o in HOLLOW_OCEANS
+        ocean_handles[o] = plt.Line2D(
+            [0], [0],
+            marker='o',
+            linestyle='',
+            markersize=7 if is_hollow else 8,
+            markerfacecolor='none' if is_hollow else color,
+            markeredgecolor=color,
+            markeredgewidth=2.4 if is_hollow else 0.3,
+        )
 
     half = len(ocean_labels) // 2
     left_oceans = ocean_labels[:half]
@@ -208,7 +221,7 @@ def main():
     # Left subplot: k_dcp - k_cp vs sza
     plot_scatter_points(ax_left, points_df, x_col='sza', y_col='k_dcp_minus_k_cp')
     add_fit_line_and_r(ax_left, points_df, x_col='sza', y_col='k_dcp_minus_k_cp')
-    ax_left.set_xlabel('SZA (deg)', fontsize=14)
+    ax_left.set_xlabel('Satellite-overpass-time SZA (°)', fontsize=14)
     ax_left.set_ylabel(r'$k_{\mathrm{dcp}} - k_{\mathrm{cp}}$', fontsize=14)
     ax_left.set_yticks([-0.03, 0, 0.03, 0.06, 0.09, 0.12, 0.15])
     ax_left.grid(True, linestyle='--', alpha=0.3)

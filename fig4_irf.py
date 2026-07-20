@@ -640,7 +640,7 @@ def draw_single_ocean_bar(ax, ocean_irf, method, ocean):
     plot_vals = np.nan_to_num(vals, nan=0.0)
     x = np.arange(len(BAR_VARIANTS))
 
-    ax.bar(x, plot_vals, width=0.62, color=colors, edgecolor=colors, linewidth=1.2, alpha=BAR_ALPHA)
+    ax.bar(x, plot_vals, width=0.62, color=colors, edgecolor='k', linewidth=1.2, alpha=BAR_ALPHA)
     ax.axhline(0, color='0.25', linewidth=0.8)
     ax.set_axisbelow(True)
     ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.30)
@@ -703,7 +703,7 @@ def save_bar_legend_pngs(ocean_irf, ocean_area):
         handles = [
             Patch(
                 facecolor=colors[i],
-                edgecolor=colors[i],
+                edgecolor='k',
                 alpha=BAR_ALPHA,
                 label=labels[i]
             )

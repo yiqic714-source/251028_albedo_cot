@@ -22,7 +22,7 @@ colors = [
 
 # Labels for the 5 components
 component_labels = [
-    r'$1-k_{\mathrm{dcp}}$',
+    r'$k_{\mathrm{T91}}-k_{\mathrm{dcp}}$',
     r'$k_{\mathrm{dcp}}-k_{\mathrm{cp}}$',
     r'$k_{\mathrm{cp}}-k_{\mathrm{ret}}$',
     r'$k_{\mathrm{ret}}-k_{\mathrm{msk}}$',
@@ -44,20 +44,30 @@ def plot_donut_chart(ocean, mean_sizes):
     """
     fig, ax = plt.subplots(figsize=(4, 4))
     fig.patch.set_alpha(0.0)
+    value_iter = iter(mean_sizes)
+
+    def format_value(_pct):
+        return f'{next(value_iter):.2f}'
 
     # Draw a single pie with a hole in the center (donut)
-    wedges, _ = ax.pie(
+    wedges, _, autotexts = ax.pie(
         mean_sizes,
         colors=colors,
         startangle=90,
-        wedgeprops=dict(edgecolor='w', linewidth=3)
+        autopct=format_value,
+        pctdistance=0.7,
+        textprops=dict(color='w', fontsize=21, weight='bold'),
+        wedgeprops=dict(edgecolor='none')#, linewidth=2)
     )
+
+    for autotext in autotexts:
+        autotext.set_zorder(5)
 
     # Cover the center with a white circle to create the donut hole
     circle = plt.Circle(
-        (0, 0), 0.45,
+        (0, 0), 0.37,
         transform=ax.transData,
-        color='white',
+        color='whitesmoke',
         zorder=3
     )
     ax.add_artist(circle)
@@ -67,7 +77,8 @@ def plot_donut_chart(ocean, mean_sizes):
         0, 0,
         f'{ocean}',
         ha='center', va='center',
-        fontsize=30,
+        fontsize=24,
+        color='k',
         weight='bold',
         zorder=4
     )

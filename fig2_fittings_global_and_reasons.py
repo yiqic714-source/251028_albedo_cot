@@ -144,7 +144,7 @@ def compute_sbdart_albedo_per_point(df, table_folder):
     return result
 
 
-def compute_sbdart_albedo_fixed_sza(df, table_folder, sza=54.4):
+def compute_sbdart_albedo_fixed_sza(df, table_folder, sza=54.74):
     result = np.full(len(df), np.nan)
 
     for ocean in oceans:
@@ -394,8 +394,7 @@ def draw_delta_k_boxplot(ax, data, labels, ylabel):
     ax.set_ylabel(ylabel, fontsize=14)
     ax.tick_params(axis='x', labelsize=11.5)
     ax.tick_params(axis='y', labelsize=11)
-    ax.axhline(0.0, color='gray', linestyle='--', alpha=0.5)
-    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    ax.grid(axis='y', linestyle='--', alpha=0.45)
 
 
 def get_paired_delta_k_values(records, key):
@@ -488,7 +487,7 @@ def prepare_global_5curves_data(verbose=True, include_simulations=True):
         df, 'cot_mod08', 'albedo', bin_edges
     )
 
-    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.4)
+    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.74)
 
     if verbose:
         print('Fitting k values for relationship panel...')
@@ -532,7 +531,7 @@ def prepare_global_5curves_data(verbose=True, include_simulations=True):
     if include_simulations:
         if verbose:
             print('Computing SBDART simulation data for relationship panel...')
-        alb_dcp = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.4, table_folder='dcp')
+        alb_dcp = cot_to_albedo(df['ret_cot_cer'], 'sbdart', sza=54.74, table_folder='dcp')
         df['cp_albedo'] = compute_sbdart_albedo_per_point(df, 'cp')
 
         cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
@@ -713,11 +712,11 @@ def main(icon_style='nature'):
     print('Computing coupling decomposition data for panel (c)...')
     sorted_idx = np.argsort(df['ret_cot_cer'])
 
-    # --- Lines 2-3: Fixed sza=54.4, per-point cot, with errorbar ---
+    # --- Lines 2-3: Fixed sza=54.74, per-point cot, with errorbar ---
     lookup_folders_fixed_sza = ['gasdcp_surcp', 'surdcp_gascp']
     lookup_labels_fixed_sza = [
-        r'$A_{\mathrm{sfc}}$ Coupled',
-        r'Gas Coupled'
+        r'$A_{\mathrm{sfc}}$ Coupled: $k$=',
+        r'Gas Coupled: $k$='
     ]
     lookup_colors_fixed_sza = [AUX_SURFACE_COLOR, AUX_GAS_COLOR]
 
@@ -725,8 +724,8 @@ def main(icon_style='nature'):
     panel_c_lines = []
 
     for idx_offset, folder in enumerate(lookup_folders_fixed_sza):
-        print(f'  Computing {folder} with fixed sza=54.4...')
-        alb_vals = compute_sbdart_albedo_fixed_sza(df, folder, sza=54.4)
+        print(f'  Computing {folder} with fixed sza=54.74...')
+        alb_vals = compute_sbdart_albedo_fixed_sza(df, folder, sza=54.74)
         df[f'alb_{folder}'] = alb_vals
 
         cot_bins, alb_bins, alb_std = bin_data_by_cot(
@@ -747,14 +746,14 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_fixed_sza[idx_offset],
-            'label': lookup_labels_fixed_sza[idx_offset]
+            'label': f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f}'
         })
 
     # --- Lines 4-5: Per-point sza, with errorbar ---
     lookup_folders_sza = ['dcp', 'cp']
     lookup_labels_sza = [
-        r'SZA Coupled',
-        r'All Coupled: $k_{\mathrm{cp}}=$'
+        r'SZA Coupled: $k$=',
+        r'Coupled: $k_{\mathrm{cp}}=$'
     ]
     lookup_colors_sza = [AUX_SZA_COLOR, CP_COLOR]
 
@@ -781,11 +780,7 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_sza[idx_offset],
-            'label': (
-                lookup_labels_sza[idx_offset]
-                if folder == 'dcp'
-                else f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
-            )
+            'label': f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
         })
 
     # ================================================================
@@ -818,12 +813,12 @@ def main(icon_style='nature'):
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
         color=AUX_VS_COLOR, lw=2, linestyle='--',
-        label='Sbdart VS'
+        label='Simu. VIS'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
-        label=rf'Sbdart SW: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
+        label=rf'Simu. SW: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
     )
     ax1.set_xlim(0, 60)
     ax1.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -831,13 +826,13 @@ def main(icon_style='nature'):
     ax1.tick_params(axis='both', labelsize=11)
     ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
              transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-    ax1.set_title('T91 vs. Dcp', fontsize=14, loc='center', pad=4.5)
+    ax1.set_title('T91 vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
     ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================
     # Panel (b): fig3 panel b (coupling decomposition lines)
     # ================================================================
-    # Line 1: Decoupled SBDART (dcp) with fixed sza=54.4
+    # Line 1: Decoupled SBDART (dcp) with fixed sza=54.74
     ax2.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
@@ -864,7 +859,7 @@ def main(icon_style='nature'):
     ax2.tick_params(axis='both', labelsize=11)
     ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
              transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.set_title('Dcp vs. Cp', fontsize=14, loc='center', pad=4.5)
+    ax2.set_title('Dcp Simu. vs. Cp Simu.', fontsize=14, loc='center', pad=4.5)
     ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
 
     # ================================================================
@@ -885,7 +880,7 @@ def main(icon_style='nature'):
     add_p_value_annotation(ax3, 3, 4, aod_cot_low, aod_cot_high, p_aod_cot)
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
+    ax3.set_title('Cp Simu. vs. Ret Obs.', fontsize=14, loc='center', pad=4.5)
 
     # ================================================================
     # Panel (d): fig3 panel d (boxplot: unr_fra vs aod_unr)
@@ -905,7 +900,7 @@ def main(icon_style='nature'):
     add_p_value_annotation(ax4, 3, 4, aod_unr_low, aod_unr_high, p_aod_unr)
     ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
              transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
-    ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
+    ax4.set_title('Ret Obs. vs. Msk Obs.', fontsize=14, loc='center', pad=4.5)
 
     # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')

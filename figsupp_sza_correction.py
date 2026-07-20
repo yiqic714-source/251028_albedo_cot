@@ -255,7 +255,7 @@ def main(recompute=False):
 
     pcm = draw_contourf(ax_a, sza_grid, cot_grid, albedo_mean)
     cbar = fig.colorbar(pcm, ax=ax_a)
-    cbar.set_label(r'$A_\mathrm{c,dcp}$', fontsize=13)
+    cbar.set_label(r'$A_\mathrm{c,cp}$', fontsize=13)
     ax_a.text(-0.01, 1.01, format_panel_tag(0, 'nature'),
               transform=ax_a.transAxes, fontsize=17, va='bottom', ha='left')
 
