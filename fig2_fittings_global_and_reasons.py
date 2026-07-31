@@ -31,7 +31,7 @@ MIN_CF = 0.1
 # ============================================================
 # Unified color scheme
 # Panel (a) five main colors:
-#   T91: black
+#   LT: black
 #   DCP: green  (swapped with CP as requested)
 #   CP : blue   (swapped with DCP as requested)
 #   RET: orange-yellow
@@ -39,7 +39,7 @@ MIN_CF = 0.1
 # Panels (b)/(c) reuse the same colors whenever the same physical line appears.
 # Auxiliary decomposition lines use high-contrast colors not used by panel (a).
 # ============================================================
-T91_COLOR = '#222222'
+LT_COLOR = '#222222'
 DCP_COLOR = '#00bfff'
 CP_COLOR  = '#574cff'
 RET_COLOR = '#ff852e'
@@ -577,13 +577,13 @@ def draw_global_5curves_panel(
     df = panel_data['df']
 
     solid_labels = [
-        'T91',
+        'LT',
         'Ret Obs.',
         'Msk Obs.'
     ]
 
     dashed_labels = [
-        rf'$k_{{\mathrm{{T91}}}}$={panel_data["k_t91"]:.2f}',
+        rf'$k_{{\mathrm{{LT}}}}$={panel_data["k_t91"]:.2f}',
         rf'$k_{{\mathrm{{ret}}}}$={panel_data["k_ret"]:.2f}',
         rf'$k_{{\mathrm{{msk}}}}$={panel_data["k_msk"]:.2f}'
     ]
@@ -598,9 +598,9 @@ def draw_global_5curves_panel(
     solid_handles = []
     dashed_handles = []
 
-    h, = ax.plot(cot_range, panel_data['alb_t91'], color=T91_COLOR, lw=2, ls='-')
+    h, = ax.plot(cot_range, panel_data['alb_t91'], color=LT_COLOR, lw=2, ls='-')
     solid_handles.append(h)
-    h, = ax.plot(cot_range, panel_data['alb_t91_fit'], color=T91_COLOR, lw=1.5, ls='--', alpha=0.7)
+    h, = ax.plot(cot_range, panel_data['alb_t91_fit'], color=LT_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     if include_simulations:
@@ -807,8 +807,8 @@ def main(icon_style='nature'):
     # ================================================================
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
-        color=T91_COLOR, lw=2,
-        label=rf'Analytical: $k_\mathrm{{T91}}$={k_quad:.2f}'
+        color=LT_COLOR, lw=2,
+        label=rf'Analytical: $k_\mathrm{{LT}}$={k_quad:.2f}'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
@@ -826,7 +826,7 @@ def main(icon_style='nature'):
     ax1.tick_params(axis='both', labelsize=11)
     ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
              transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-    ax1.set_title('T91 vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
+    ax1.set_title('LT vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
     ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================

@@ -22,7 +22,7 @@ colors = [
 
 # Labels for the 5 components
 component_labels = [
-    r'$k_{\mathrm{T91}}-k_{\mathrm{dcp}}$',
+    r'$k_{\mathrm{LT}}-k_{\mathrm{dcp}}$',
     r'$k_{\mathrm{dcp}}-k_{\mathrm{cp}}$',
     r'$k_{\mathrm{cp}}-k_{\mathrm{ret}}$',
     r'$k_{\mathrm{ret}}-k_{\mathrm{msk}}$',

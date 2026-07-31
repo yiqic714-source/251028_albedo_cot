@@ -108,7 +108,7 @@ if __name__ == "__main__":
     )
     ax.add_feature(cfeature.COASTLINE, linewidth=0.8, color='black', zorder=5)
 
-    ax.set_title(format_panel_tag(0, 'nature'), fontsize=16, loc='left')
+    ax.set_title(format_panel_tag(2, 'nature'), fontsize=16, loc='left')
     ax.set_extent([-180, 180, -60, 60], crs=ccrs.PlateCarree())
 
     # Gridlines

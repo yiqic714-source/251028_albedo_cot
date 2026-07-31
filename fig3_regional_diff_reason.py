@@ -221,11 +221,11 @@ def main():
     # Left subplot: k_dcp - k_cp vs sza
     plot_scatter_points(ax_left, points_df, x_col='sza', y_col='k_dcp_minus_k_cp')
     add_fit_line_and_r(ax_left, points_df, x_col='sza', y_col='k_dcp_minus_k_cp')
-    ax_left.set_xlabel('Satellite-overpass-time SZA (°)', fontsize=14)
+    ax_left.set_xlabel('Satellite-overpass-time SZA (°)', fontsize=13)
     ax_left.set_ylabel(r'$k_{\mathrm{dcp}} - k_{\mathrm{cp}}$', fontsize=14)
     ax_left.set_yticks([-0.03, 0, 0.03, 0.06, 0.09, 0.12, 0.15])
     ax_left.grid(True, linestyle='--', alpha=0.3)
-    ax_left.text(-0.01, 1.01, format_panel_tag(1, 'nature'),
+    ax_left.text(-0.01, 1.01, format_panel_tag(0, 'nature'),
                  transform=ax_left.transAxes, fontsize=17, va='bottom', ha='left')
 
     # Right subplot: k_cp - k_ret vs cot_disp
@@ -234,7 +234,7 @@ def main():
     ax_right.set_xlabel(r'$d_{\mathrm{COT}}$', fontsize=14)
     ax_right.set_ylabel(r'$k_{\mathrm{cp}} - k_{\mathrm{ret}}$', fontsize=14)
     ax_right.grid(True, linestyle='--', alpha=0.3)
-    ax_right.text(-0.01, 1.01, format_panel_tag(2, 'nature'),
+    ax_right.text(-0.01, 1.01, format_panel_tag(1, 'nature'),
                   transform=ax_right.transAxes, fontsize=17, va='bottom', ha='left')
 
     # Shared legend on the right side of both subplots

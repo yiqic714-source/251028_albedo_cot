@@ -34,8 +34,8 @@ MAP_EXTENT = [-180, 180, -60, 60]
 MAP_ASPECT = 3.0          # physical width / height for 360 deg x 120 deg
 
 PANEL_TITLES = {
-    'ret': r'IRF$_{\mathrm{aci}}$ Distribution Using Ret Obs.',
-    'msk': r'IRF$_{\mathrm{aci}}$ Distribution Using Msk Obs.',
+    'ret': r'IRF$_{\mathrm{aci}}$ Using Cloud-Retrieval Region',
+    'msk': r'IRF$_{\mathrm{aci}}$ Using Cloud-Mask Region',
 }
 
 # T91/uncorrected parameters used for the third bar in the separate ocean PNGs
@@ -46,14 +46,14 @@ lnb_t91 = np.log(0.13)
 BAR_VARIANTS = ['1030', 'day', 'orig']
 BAR_LABELS = {
     'ret': [
-        r'Ret + $A_{\mathrm{c,1030}}$',
-        r'Ret + COT$_{\mathrm{1030}}$',
-        'Uncorrected'
+        r'$A_{\mathrm{c,1030}}$ Method',
+        r'COT$_{\mathrm{1030}}$ Method',
+        'LT Method'
     ],
     'msk': [
-        r'Msk + $A_{\mathrm{c,1030}}$',
-        r'Msk + COT$_{\mathrm{1030}}$',
-        'Uncorrected'
+        r'$A_{\mathrm{c,1030}}$ Method',
+        r'COT$_{\mathrm{1030}}$ Method',
+        'LT Method'
     ],
 }
 BAR_XTICK_LABELS = [r'$A_{c,1030}$', r'COT$_{1030}$', 'Uncorr.']
@@ -77,10 +77,10 @@ BAR_AX_POS = [0.28, 0.22, 0.66, 0.66]  # fixed axes box for all 16 bar PNGs
 # Overestimate decomposition for the new panel (c).
 # User-defined mapping: COT1030 corresponds to the 'day' coefficients; Ac1030 corresponds to the '1030' coefficients.
 OVER_GROUPS = [
-    ('ret_ac1030', 'ret', '1030', r'Ret + $A_{\mathrm{c,1030}}$'),
-    ('ret_cot1030', 'ret', 'day', r'Ret + COT$_{\mathrm{1030}}$'),
-    ('msk_ac1030', 'msk', '1030', r'Msk + $A_{\mathrm{c,1030}}$'),
-    ('msk_cot1030', 'msk', 'day', r'Msk + COT$_{\mathrm{1030}}$'),
+    ('ret_ac1030', 'ret', '1030', r'LT vs. $A_{\mathrm{c,1030}}$, Ret'),
+    ('ret_cot1030', 'ret', 'day', r'LT vs. COT$_{\mathrm{1030}}$, Ret'),
+    ('msk_ac1030', 'msk', '1030', r'LT vs. $A_{\mathrm{c,1030}}$, Msk'),
+    ('msk_cot1030', 'msk', 'day', r'LT vs. COT$_{\mathrm{1030}}$, Msk'),
 ]
 OVER_BAR_KEYS = ['k_caused', 'ac_caused', 'total']
 OVER_BAR_LABELS = [
@@ -583,7 +583,7 @@ def draw_overestimate_bars(ax, overestimate, panel_tag):
     ax.set_xticks(x)
     ax.set_xticklabels(group_labels, fontsize=11)
     ax.set_ylabel('Overestimate', fontsize=12)
-    ax.set_title('Decomposing the Overestimate of 4 Methods ', fontsize=13, pad=7)
+    ax.set_title(r'Global Overestimation of IRF$_{\mathrm{aci}}$', fontsize=13, pad=7)
     ax.text(-0.01, 1.01, panel_tag,
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
 
@@ -607,7 +607,7 @@ def draw_overestimate_bars(ax, overestimate, panel_tag):
     ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
     ax.tick_params(axis='y', labelsize=10, rotation=55)
     ax.tick_params(axis='both', direction='out', length=3, width=0.8)
-    ax.legend(frameon=False, fontsize=10.5, loc='upper left', ncol=1)
+    ax.legend(frameon=False, fontsize=11, loc='upper left', ncol=1)
 
 
 # ============================================================
@@ -643,7 +643,7 @@ def draw_single_ocean_bar(ax, ocean_irf, method, ocean):
     ax.bar(x, plot_vals, width=0.62, color=colors, edgecolor='k', linewidth=1.2, alpha=BAR_ALPHA)
     ax.axhline(0, color='0.25', linewidth=0.8)
     ax.set_axisbelow(True)
-    ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.30)
+    # ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.30)
 
     # Title inside the axes, horizontally centered.
     ax.text(0.5, 0.93, ocean, transform=ax.transAxes,
@@ -697,7 +697,7 @@ def save_bar_legend_pngs(ocean_irf, ocean_area):
             irf_mean = area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant)
 
             labels.append(
-                rf'{BAR_LABELS[method][i]}: {irf_mean:.2f} W m$^{{-2}}$'
+                rf'{BAR_LABELS[method][i]}: {irf_mean:.3f} W m$^{{-2}}$'
             )
 
         handles = [
