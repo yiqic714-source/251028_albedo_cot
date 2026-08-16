@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 from utils_fitting import (
     oceans, season_dict, cot_range,
-    mc_fit, format_panel_tag
+    mc_fit
 )
 from utils_solar import (
     compute_daytime_fit_data, cot_k_b_to_albedo
@@ -237,35 +237,29 @@ def main(recompute=False):
         return
     print(f'Averaged {count} ocean-season lookup tables.')
 
-    fig = plt.figure(figsize=(10, 4.8))
-    apply_main_background(fig)
-
-    gs = fig.add_gridspec(
-        1, 2,
-        wspace=0.25,
-        bottom=0.16,
-        top=0.92,
-        left=0.07,
-        right=0.97
-    )
-
-    ax_a = fig.add_subplot(gs[0, 0])
-    ax_b = fig.add_subplot(gs[0, 1])
-    apply_main_background(fig, [ax_a, ax_b])
+    fig_a = plt.figure(figsize=(5.0, 4))
+    apply_main_background(fig_a)
+    ax_a = fig_a.add_subplot(1, 1, 1)
+    apply_main_background(fig_a, ax_a)
 
     pcm = draw_contourf(ax_a, sza_grid, cot_grid, albedo_mean)
-    cbar = fig.colorbar(pcm, ax=ax_a)
+    cbar = fig_a.colorbar(pcm, ax=ax_a)
     cbar.set_label(r'$A_\mathrm{c,cp}$', fontsize=13)
-    ax_a.text(-0.01, 1.01, format_panel_tag(0, 'nature'),
-              transform=ax_a.transAxes, fontsize=17, va='bottom', ha='left')
 
+    out_path = os.path.join(FIG_DIR, 'figsupp_sza_correction_a.png')
+    save_png(fig_a, out_path, dpi=300)
+    plt.close(fig_a)
+    print(f'Saved: {out_path}')
+
+    fig_b = plt.figure(figsize=(5.0, 4.8))
+    apply_main_background(fig_b)
+    ax_b = fig_b.add_subplot(1, 1, 1)
+    apply_main_background(fig_b, ax_b)
     draw_fit_lines(ax_b, recompute=recompute)
-    ax_b.text(-0.01, 1.01, format_panel_tag(1, 'nature'),
-              transform=ax_b.transAxes, fontsize=17, va='bottom', ha='left')
 
-    out_path = os.path.join(FIG_DIR, 'figsupp_sza_correction.png')
-    save_png(fig, out_path, dpi=300)
-    plt.close(fig)
+    out_path = os.path.join(FIG_DIR, 'figsupp_sza_correction_b.png')
+    save_png(fig_b, out_path, dpi=300)
+    plt.close(fig_b)
     print(f'Saved: {out_path}')
 
 

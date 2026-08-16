@@ -14,24 +14,23 @@ from utils_solar import cot_k_b_to_albedo, calc_monthly_swdown, calc_grid_cell_a
 # Paths
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
 FIG_DIR = f'{BASE_PATH}/figs'
-SENSITIVITY_1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_1030.csv'
-SENSITIVITY_DAY_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_day.csv'
+SENSITIVITY_AC1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_1030.csv'
+SENSITIVITY_COT1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_day.csv'
 BELLOUIN2013_CSV = f'{BASE_PATH}/processed_data/Bellouin2013.csv'
 os.makedirs(FIG_DIR, exist_ok=True)
 
-# Output folder for the 16 separate bar PNGs and 2 separate legend PNGs
+# Output folder for the split separate bar PNGs and legend PNGs
 BAR_EXPORT_DIR = os.path.join(FIG_DIR, 'fig4_ocean_irf_bars')
 os.makedirs(BAR_EXPORT_DIR, exist_ok=True)
 
 # Backgrounds
-MAIN_FACE_COLOR = (1, 1, 1, 0.55)          # main Fig. 5
-TRANSPARENT_FACE_COLOR = (1, 1, 1, 0.0)   # outside the axes for 16 bar PNGs
-LEGEND_FACE_COLOR = (1, 1, 1, 0.25)       # 2 exported legend PNGs
+MAIN_FACE_COLOR = (1, 1, 1, 0.55)
+TRANSPARENT_FACE_COLOR = (1, 1, 1, 0.0)
+LEGEND_FACE_COLOR = (1, 1, 1, 0.25)
 
 # Map style
 CONTOUR_COLOR = '#7B3294'  # purple contour lines for both panels
 MAP_EXTENT = [-180, 180, -60, 60]
-MAP_ASPECT = 3.0          # physical width / height for 360 deg x 120 deg
 
 PANEL_TITLES = {
     'ret': r'IRF$_{\mathrm{aci}}$ Using Cloud-Retrieval Region',
@@ -42,53 +41,49 @@ PANEL_TITLES = {
 k_t91 = 1.0
 lnb_t91 = np.log(0.13)
 
-# Ocean-bar settings. The order is fixed as in the exported bar PNGs.
-BAR_VARIANTS = ['1030', 'day', 'orig']
-BAR_LABELS = {
-    'ret': [
-        r'$A_{\mathrm{c,1030}}$ Method',
-        r'COT$_{\mathrm{1030}}$ Method',
-        'LT Method'
-    ],
-    'msk': [
-        r'$A_{\mathrm{c,1030}}$ Method',
-        r'COT$_{\mathrm{1030}}$ Method',
-        'LT Method'
-    ],
+METHODS = ('ret', 'msk')
+
+# Ocean-bar settings.
+BAR_VARIANTS = ['ac1030', 'cot1030', 'orig']
+BAR_SPLITS = {
+    'ac1030': ('ac1030', 'orig'),
+    'cot1030': ('cot1030', 'orig'),
 }
-BAR_XTICK_LABELS = [r'$A_{c,1030}$', r'COT$_{1030}$', 'Uncorr.']
-BAR_PALETTES = {
-    'ret': {
-        'irf': ['#D55E00', '#E69F00', '#F0C808'],
-        'legend_title': 'Retrieval-domain observations'
-    },
-    'msk': {
-        'irf': ['#C46A5A', '#8B1E3F', '#E7C2A3'],
-        'legend_title': 'Mask-domain observations'
-    },
+BAR_LABELS = {
+    'ac1030': r'Obs. Relation',
+    'cot1030': r'Obs.  Relation',
+    'orig': 'LT Relation',
+}
+BAR_COLORS = {
+    'ret': {'ac1030': '#D55E00', 'cot1030': '#D55E00', 'orig': '#F0BA08'},
+    'msk': {'ac1030': '#B2182B', 'cot1030': '#B2182B', 'orig': '#EF8A62'},
 }
 BAR_ALPHA = 0.65
 BAR_YLIMS = {
     'ret': (0, 1.5),
     'msk': (0, 1.5),
 }
-BAR_AX_POS = [0.28, 0.22, 0.66, 0.66]  # fixed axes box for all 16 bar PNGs
+BAR_AX_POS = [0.28, 0.22, 0.66, 0.66]
 
-# Overestimate decomposition for the new panel (c).
-# User-defined mapping: COT1030 corresponds to the 'day' coefficients; Ac1030 corresponds to the '1030' coefficients.
+# Overestimate decomposition for panel (c).
 OVER_GROUPS = [
-    ('ret_ac1030', 'ret', '1030', r'LT vs. $A_{\mathrm{c,1030}}$, Ret'),
-    ('ret_cot1030', 'ret', 'day', r'LT vs. COT$_{\mathrm{1030}}$, Ret'),
-    ('msk_ac1030', 'msk', '1030', r'LT vs. $A_{\mathrm{c,1030}}$, Msk'),
-    ('msk_cot1030', 'msk', 'day', r'LT vs. COT$_{\mathrm{1030}}$, Msk'),
+    ('ret_ac1030', 'ret', 'ac1030', r'Ret'),
+    ('ret_cot1030', 'ret', 'cot1030', r'Ret'),
+    ('msk_ac1030', 'msk', 'ac1030', r'Msk'),
+    ('msk_cot1030', 'msk', 'cot1030', r'Msk'),
 ]
-OVER_BAR_KEYS = ['k_caused', 'ac_caused', 'total']
 OVER_BAR_LABELS = [
     r'$k$-caused overestimate',
     r'$A_{\mathrm{c}}$-caused overestimate',
     'Total overestimate',
 ]
 OVER_BAR_COLORS = ["#818181", "#54CB5C", "#7B3294"]
+OVER_STACK_KEYS = ('k_caused', 'ac_caused')
+
+UNDERLY_FIGURES = [
+    ('ac1030', ['ret_ac1030', 'msk_ac1030'], 'fig4_irf_underly_ac1030.png'),
+    ('cot1030', ['ret_cot1030', 'msk_cot1030'], 'fig4_irf_underly_cot1030.png'),
+]
 
 
 # ============================================================
@@ -127,6 +122,12 @@ def save_png(fig, out_path, dpi=300, bbox_inches='tight'):
         edgecolor='none',
         transparent=False
     )
+
+
+def get_split_output_dir(split_key):
+    out_dir = os.path.join(BAR_EXPORT_DIR, split_key)
+    os.makedirs(out_dir, exist_ok=True)
+    return out_dir
 
 
 # ============================================================
@@ -180,25 +181,24 @@ def compute_irf_data():
     -------
     ocean_irf : dict
         ocean_irf[method][ocean][variant] = area-weighted IRF_aci.
-        method is 'ret' or 'msk'; variant is '1030', 'day', or 'orig'.
+        method is 'ret' or 'msk'; variant is 'ac1030', 'cot1030', or 'orig'.
     ocean_area : dict
         ocean_area[method][ocean][variant] = valid grid-cell area used for
         each ocean-level IRF_aci average.
     grid_irf : pandas.DataFrame
-        Grid-level corrected Ac_1030 IRF_aci for contour-line maps.
-        Columns: method, lat, lon, irf.
+        Grid-level corrected Ac1030 and COT1030 IRF_aci for contour-line maps.
+        Columns: method, variant, lat, lon, irf.
     overestimate : dict
         All-ocean area-weighted overestimate ratios for panel (c).
     """
     print('Computing IRF data...')
 
-    methods = ['ret', 'msk']
     merged_df = load_global_data()
 
-    coef_1030 = pd.read_csv(SENSITIVITY_1030_CSV)
-    coef_day = pd.read_csv(SENSITIVITY_DAY_CSV)
-    coef_1030_lookup = build_coef_lookup(coef_1030, suffix='')
-    coef_day_lookup = build_coef_lookup(coef_day, suffix='_day')
+    coef_ac1030 = pd.read_csv(SENSITIVITY_AC1030_CSV)
+    coef_cot1030 = pd.read_csv(SENSITIVITY_COT1030_CSV)
+    coef_ac1030_lookup = build_coef_lookup(coef_ac1030, suffix='')
+    coef_cot1030_lookup = build_coef_lookup(coef_cot1030, suffix='_day')
 
     # Bellouin2013.csv is assumed to be wide format: Ocean, DJF, MAM, JJA, SON.
     lnnd_df = pd.read_csv(BELLOUIN2013_CSV)
@@ -227,8 +227,8 @@ def compute_irf_data():
     }
     seasonal_grid = merged_df.groupby(['ocean', 'season', 'lat', 'lon']).agg(agg_cols).reset_index()
 
-    ocean_irf = {method: {ocean: {} for ocean in oceans} for method in methods}
-    ocean_area = {method: {ocean: {} for ocean in oceans} for method in methods}
+    ocean_irf = {method: {ocean: {} for ocean in oceans} for method in METHODS}
+    ocean_area = {method: {ocean: {} for ocean in oceans} for method in METHODS}
     accum = {
         method: {
             ocean: {
@@ -237,7 +237,7 @@ def compute_irf_data():
             }
             for ocean in oceans
         }
-        for method in methods
+        for method in METHODS
     }
 
     # All-ocean accumulators for panel (c).
@@ -269,15 +269,15 @@ def compute_irf_data():
             if np.isnan(lnnd_val):
                 continue
 
-            k_ret_1030 = get_coef(coef_1030_lookup, 'ret', ocean, season, 'k')
-            lnb_ret_1030 = get_coef(coef_1030_lookup, 'ret', ocean, season, 'lnb')
-            k_ret_day = get_coef(coef_day_lookup, 'ret', ocean, season, 'k')
-            lnb_ret_day = get_coef(coef_day_lookup, 'ret', ocean, season, 'lnb')
+            k_ret_ac1030 = get_coef(coef_ac1030_lookup, 'ret', ocean, season, 'k')
+            lnb_ret_ac1030 = get_coef(coef_ac1030_lookup, 'ret', ocean, season, 'lnb')
+            k_ret_cot1030 = get_coef(coef_cot1030_lookup, 'ret', ocean, season, 'k')
+            lnb_ret_cot1030 = get_coef(coef_cot1030_lookup, 'ret', ocean, season, 'lnb')
 
-            k_msk_1030 = get_coef(coef_1030_lookup, 'msk', ocean, season, 'k')
-            lnb_msk_1030 = get_coef(coef_1030_lookup, 'msk', ocean, season, 'lnb')
-            k_msk_day = get_coef(coef_day_lookup, 'msk', ocean, season, 'k')
-            lnb_msk_day = get_coef(coef_day_lookup, 'msk', ocean, season, 'lnb')
+            k_msk_ac1030 = get_coef(coef_ac1030_lookup, 'msk', ocean, season, 'k')
+            lnb_msk_ac1030 = get_coef(coef_ac1030_lookup, 'msk', ocean, season, 'lnb')
+            k_msk_cot1030 = get_coef(coef_cot1030_lookup, 'msk', ocean, season, 'k')
+            lnb_msk_cot1030 = get_coef(coef_cot1030_lookup, 'msk', ocean, season, 'lnb')
 
             cot_vals = sub['cot_mod08'].values.astype(float)
             swdown = sub['swdown'].values.astype(float)
@@ -289,18 +289,18 @@ def compute_irf_data():
 
             variants = {
                 'ret': {
-                    '1030': (k_ret_1030, lnb_ret_1030, cf_ret_vals),
-                    'day': (k_ret_day, lnb_ret_day, cf_ret_vals),
+                    'ac1030': (k_ret_ac1030, lnb_ret_ac1030, cf_ret_vals),
+                    'cot1030': (k_ret_cot1030, lnb_ret_cot1030, cf_ret_vals),
                     'orig': (k_t91, lnb_t91, cf_ret_vals),
                 },
                 'msk': {
-                    '1030': (k_msk_1030, lnb_msk_1030, cf_msk_vals),
-                    'day': (k_msk_day, lnb_msk_day, cf_msk_vals),
+                    'ac1030': (k_msk_ac1030, lnb_msk_ac1030, cf_msk_vals),
+                    'cot1030': (k_msk_cot1030, lnb_msk_cot1030, cf_msk_vals),
                     'orig': (k_t91, lnb_t91, cf_msk_vals),
                 },
             }
 
-            for method in methods:
+            for method in METHODS:
                 for variant in BAR_VARIANTS:
                     k_val, lnb_val, cf_vals = variants[method][variant]
                     if np.isnan(k_val) or np.isnan(lnb_val):
@@ -314,8 +314,8 @@ def compute_irf_data():
                         accum[method][ocean][variant]['sum'] += np.nansum(irf_vals[good] * area[good])
                         accum[method][ocean][variant]['area'] += np.nansum(area[good])
 
-                    # Grid-level data for Fig. 5 maps: corrected Ac_1030 only.
-                    if variant == '1030':
+                    # Grid-level data for Fig. 5 maps: corrected Ac1030 and COT1030.
+                    if variant in ('ac1030', 'cot1030'):
                         grid_good = (
                             np.isfinite(irf_vals) &
                             np.isfinite(sub['lat'].values) &
@@ -324,6 +324,7 @@ def compute_irf_data():
                         if np.any(grid_good):
                             grid_records.append(pd.DataFrame({
                                 'method': method,
+                                'variant': variant,
                                 'lat': sub['lat'].values[grid_good].astype(float),
                                 'lon': sub['lon'].values[grid_good].astype(float),
                                 'irf': irf_vals[grid_good].astype(float),
@@ -362,7 +363,7 @@ def compute_irf_data():
                         over_accum[group_key][scenario_name]['sum'] += np.nansum(irf_vals[good] * area[good])
                         over_accum[group_key][scenario_name]['area'] += np.nansum(area[good])
 
-    for method in methods:
+    for method in METHODS:
         for ocean in oceans:
             for variant in BAR_VARIANTS:
                 item = accum[method][ocean][variant]
@@ -415,19 +416,19 @@ def compute_irf_data():
 
     if grid_records:
         grid_irf = pd.concat(grid_records, ignore_index=True)
-        grid_irf = grid_irf.groupby(['method', 'lat', 'lon'], as_index=False)['irf'].mean()
+        grid_irf = grid_irf.groupby(['method', 'variant', 'lat', 'lon'], as_index=False)['irf'].mean()
     else:
-        grid_irf = pd.DataFrame(columns=['method', 'lat', 'lon', 'irf'])
+        grid_irf = pd.DataFrame(columns=['method', 'variant', 'lat', 'lon', 'irf'])
 
     return ocean_irf, ocean_area, grid_irf, overestimate
 
 
 # ============================================================
-# Fig. 5: corrected Ac_1030 IRF contour-line maps
+# Fig. 5: corrected Ac1030/COT1030 IRF contour-line maps
 # ============================================================
 
-def get_common_contour_levels(grid_irf):
-    vals = grid_irf['irf'].values.astype(float)
+def get_common_contour_levels(grid_irf, variant):
+    vals = grid_irf.loc[grid_irf['variant'] == variant, 'irf'].values.astype(float)
     vals = vals[np.isfinite(vals)]
     if vals.size == 0:
         return np.array([])
@@ -444,8 +445,8 @@ def get_common_contour_levels(grid_irf):
     return np.unique(np.round(np.linspace(vmin, vmax, 3), 2))
 
 
-def draw_irf_contour_map(ax, grid_irf, method, panel_tag, levels):
-    df = grid_irf[grid_irf['method'] == method].copy()
+def draw_irf_contour_map(ax, grid_irf, method, variant, panel_tag, levels):
+    df = grid_irf[(grid_irf['method'] == method) & (grid_irf['variant'] == variant)].copy()
 
     ax.set_global()
     ax.set_extent(MAP_EXTENT, crs=ccrs.PlateCarree())
@@ -497,64 +498,37 @@ def draw_irf_contour_map(ax, grid_irf, method, panel_tag, levels):
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
 
 
-def align_map_axes_to_full_width(fig, ax_top, ax_bottom, x0=0.06, x1=0.97,
-                                 y0=0.045, y1=0.975, gap=0.095,
-                                 map_aspect=MAP_ASPECT):
-    """
-    Make the two maps span the same left/right limits while preserving the
-    PlateCarree aspect for [-180, 180] x [-60, 60], and force a visible gap
-    between the two map panels.
-    """
-    fig_w, fig_h = fig.get_size_inches()
-    width = x1 - x0
-    height = (width * fig_w / map_aspect) / fig_h
+def draw_overestimate_bars(ax, overestimate, group_keys, panel_tag, title):
+    """Draw panel (c): horizontal stacked partial overestimates and total overestimate."""
+    label_lookup = {item[0]: item[3] for item in OVER_GROUPS}
+    group_labels = [label_lookup[g] for g in group_keys]
 
-    available = y1 - y0
-    total = 2 * height + gap
-    if total > available:
-        height = (available - gap) / 2.0
-
-    y_bottom = y0 + (available - (2 * height + gap)) / 2.0
-    ax_bottom.set_position([x0, y_bottom, width, height])
-    ax_top.set_position([x0, y_bottom + height + gap, width, height])
-
-
-def draw_overestimate_bars(ax, overestimate, panel_tag):
-    """Draw panel (c): stacked partial overestimates and total overestimate."""
-    group_keys = [item[0] for item in OVER_GROUPS]
-    group_labels = [item[3] for item in OVER_GROUPS]
-
-    k_vals = np.array([overestimate[g].get('k_caused', np.nan) for g in group_keys], dtype=float)
-    ac_vals = np.array([overestimate[g].get('ac_caused', np.nan) for g in group_keys], dtype=float)
+    stack_vals = [
+        np.array([overestimate[g].get(key, np.nan) for g in group_keys], dtype=float)
+        for key in OVER_STACK_KEYS
+    ]
     total_vals = np.array([overestimate[g].get('total', np.nan) for g in group_keys], dtype=float)
 
-    x = np.arange(len(group_keys))
-    width = 0.2
+    y = np.arange(len(group_keys))
+    height = 0.28
+    left = np.zeros(len(group_keys), dtype=float)
 
-    # The first two components are stacked at the same x position.
-    ax.bar(
-        x, k_vals,
-        width=width,
-        color=OVER_BAR_COLORS[0],
-        edgecolor=OVER_BAR_COLORS[0],
-        alpha=0.78,
-        linewidth=1.0,
-        label=OVER_BAR_LABELS[0]
-    )
-    ax.bar(
-        x, ac_vals,
-        width=width,
-        bottom=k_vals,
-        color=OVER_BAR_COLORS[1],
-        edgecolor=OVER_BAR_COLORS[1],
-        alpha=0.78,
-        linewidth=1.0,
-        label=OVER_BAR_LABELS[1]
-    )
+    for vals, label, color in zip(stack_vals, OVER_BAR_LABELS[:2], OVER_BAR_COLORS[:2]):
+        ax.barh(
+            y, vals,
+            height=height,
+            left=left,
+            color=color,
+            edgecolor=color,
+            alpha=0.78,
+            linewidth=1.0,
+            label=label
+        )
+        left = left + vals
 
-    # The total overestimate is shown as a diamond scatter at the same x position.
+    # The total overestimate is shown as a diamond scatter at the same y position.
     ax.scatter(
-        x, total_vals,
+        total_vals, y,
         marker='D',
         s=62,
         color=OVER_BAR_COLORS[2],
@@ -565,53 +539,72 @@ def draw_overestimate_bars(ax, overestimate, panel_tag):
     )
         
     # Annotate each diamond with its percentage value.
-    for xi, tv in zip(x, total_vals):
+    for yi, tv in zip(y, total_vals):
         if np.isfinite(tv):
             ax.annotate(
                 f'{tv*100:.0f}%',
-                xy=(xi, tv),
-                xytext=(0, 8),
+                xy=(tv, yi),
+                xytext=(7, 0),
                 textcoords='offset points',
-                ha='center',
-                va='bottom',
+                ha='left',
+                va='center',
                 fontsize=9,
                 color=OVER_BAR_COLORS[2],
                 fontweight='bold'
             )
 
-    ax.axhline(0.0, color='0.25', linewidth=1.0, linestyle='--')
-    ax.set_xticks(x)
-    ax.set_xticklabels(group_labels, fontsize=11)
-    ax.set_ylabel('Overestimate', fontsize=12)
-    ax.set_title(r'Global Overestimation of IRF$_{\mathrm{aci}}$', fontsize=13, pad=7)
+    ax.axvline(0.0, color='0.25', linewidth=1.0, linestyle='--')
+    ax.set_yticks(y)
+    ax.set_yticklabels(group_labels, fontsize=11)
+    ax.set_xlabel('Overestimate', fontsize=12)
+    ax.set_title(title, fontsize=13, pad=7)
     ax.text(-0.01, 1.01, panel_tag,
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
 
-    stacked_vals = k_vals + ac_vals
     finite_vals = np.concatenate([
-        stacked_vals[np.isfinite(stacked_vals)],
+        left[np.isfinite(left)],
         total_vals[np.isfinite(total_vals)],
-        k_vals[np.isfinite(k_vals)],
-        ac_vals[np.isfinite(ac_vals)]
+        *[vals[np.isfinite(vals)] for vals in stack_vals]
     ])
     if finite_vals.size > 0:
-        ymin = min(0.0, np.nanmin(finite_vals) * 1.15)
-        ymax = max(0.05, np.nanmax(finite_vals) * 1.15)
-        if np.isclose(ymin, ymax):
-            ymin, ymax = -0.05, 0.05
-        ax.set_ylim(ymin, ymax)
+        xmin = min(0.0, np.nanmin(finite_vals) * 1.15)
+        xmax = max(0.05, np.nanmax(finite_vals) * 1.15)
+        if np.isclose(xmin, xmax):
+            xmin, xmax = -0.05, 0.05
+        ax.set_xlim(xmin, xmax)
 
     ax.set_axisbelow(True)
-    ax.grid(axis='y', linestyle='--', linewidth=0.6, alpha=0.35)
+    ax.grid(axis='x', linestyle='--', linewidth=0.6, alpha=0.35)
 
-    ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
-    ax.tick_params(axis='y', labelsize=10, rotation=55)
+    ax.xaxis.set_major_formatter(PercentFormatter(xmax=1.0, decimals=0))
+    ax.tick_params(axis='x', labelsize=10)
     ax.tick_params(axis='both', direction='out', length=3, width=0.8)
-    ax.legend(frameon=False, fontsize=11, loc='upper left', ncol=1)
+    legend = ax.legend(
+        frameon=False,
+        fontsize=11,
+        loc='center left',
+        bbox_to_anchor=(1.02, 0.5),
+        borderaxespad=0.0,
+        labelspacing=1.25,
+        ncol=1
+    )
+    return legend
+
+
+def shrink_axes_for_right_legend(fig, ax, legend, target_right, anchor_x=1.02):
+    """Shrink an axes so its outside-right legend ends at target_right."""
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    legend_bbox = legend.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+    pos = ax.get_position()
+
+    new_width = (target_right - legend_bbox.width - pos.x0) / anchor_x
+    if new_width > 0:
+        ax.set_position([pos.x0, pos.y0, new_width, pos.height])
 
 
 # ============================================================
-# Separate PNGs: 16 ocean-level bar charts + 2 legends
+# Separate PNGs: split ocean-level bar charts + split legends
 # ============================================================
 
 def set_bar_axes_style(ax, show_ylabel=False, ylim=(0, 1.5)):
@@ -634,41 +627,50 @@ def set_bar_axes_style(ax, show_ylabel=False, ylim=(0, 1.5)):
         ax.tick_params(axis='y', labelleft=True)
 
 
-def draw_single_ocean_bar(ax, ocean_irf, method, ocean):
-    colors = BAR_PALETTES[method]['irf']
-    vals = np.asarray([ocean_irf[method][ocean].get(var, np.nan) for var in BAR_VARIANTS], dtype=float)
+def draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants):
+    color_lookup = BAR_COLORS[method]
+    vals = np.asarray([ocean_irf[method][ocean].get(var, np.nan) for var in variants], dtype=float)
     plot_vals = np.nan_to_num(vals, nan=0.0)
-    x = np.arange(len(BAR_VARIANTS))
+    x = np.arange(len(variants))
 
-    ax.bar(x, plot_vals, width=0.62, color=colors, edgecolor='k', linewidth=1.2, alpha=BAR_ALPHA)
+    ax.bar(
+        x, plot_vals,
+        width=0.62,
+        color=[color_lookup[var] for var in variants],
+        edgecolor='k',
+        linewidth=1.2,
+        alpha=BAR_ALPHA
+    )
     ax.axhline(0, color='0.25', linewidth=0.8)
     ax.set_axisbelow(True)
     # ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.30)
 
     # Title inside the axes, horizontally centered.
-    ax.text(0.5, 0.93, ocean, transform=ax.transAxes,
-            ha='center', va='top', fontsize=15)
+    ax.text(0.1, 0.93, ocean, transform=ax.transAxes,
+            ha='left', va='top', fontsize=15)
 
     set_bar_axes_style(ax, show_ylabel=(ocean == 'NPO'), ylim=BAR_YLIMS[method])
 
 
 def save_ocean_bar_pngs(ocean_irf):
-    for method in ['ret', 'msk']:
-        for ocean in oceans:
-            fig = plt.figure(figsize=(1.75, 2.0))
-            ax = fig.add_axes(BAR_AX_POS)
-            apply_background(
-                fig, ax,
-                fig_face_color=TRANSPARENT_FACE_COLOR,
-                axes_face_color=(1, 1, 1, BAR_ALPHA)
-            )
-            draw_single_ocean_bar(ax, ocean_irf, method, ocean)
-            ax.set_position(BAR_AX_POS)
+    for method in METHODS:
+        for split_key, variants in BAR_SPLITS.items():
+            out_dir = get_split_output_dir(split_key)
+            for ocean in oceans:
+                fig = plt.figure(figsize=(1.85, 2.0))
+                ax = fig.add_axes(BAR_AX_POS)
+                apply_background(
+                    fig, ax,
+                    fig_face_color=TRANSPARENT_FACE_COLOR,
+                    axes_face_color=(1, 1, 1, BAR_ALPHA)
+                )
+                draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants)
+                ax.set_position(BAR_AX_POS)
 
-            out_path = os.path.join(BAR_EXPORT_DIR, f'fig4_{method}_{ocean}_irf_bars.png')
-            save_png(fig, out_path, dpi=300, bbox_inches=None)
-            plt.close(fig)
-            print(f'Saved: {out_path}')
+                out_path = os.path.join(out_dir, f'fig4_{method}_{ocean}_{split_key}_irf_bars.png')
+                save_png(fig, out_path, dpi=300, bbox_inches=None)
+                plt.close(fig)
+                print(f'Saved: {out_path}')
 
 
 def area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant):
@@ -689,59 +691,56 @@ def area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant):
 
 
 def save_bar_legend_pngs(ocean_irf, ocean_area):
-    for method in ['ret', 'msk']:
-        colors = BAR_PALETTES[method]['irf']
+    for method in METHODS:
+        color_lookup = BAR_COLORS[method]
 
-        labels = []
-        for i, variant in enumerate(BAR_VARIANTS):
-            irf_mean = area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant)
+        for split_key, variants in BAR_SPLITS.items():
+            out_dir = get_split_output_dir(split_key)
+            labels = []
+            for variant in variants:
+                irf_mean = area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant)
+                labels.append(
+                    rf'{BAR_LABELS[variant]}: {irf_mean:.3f} W m$^{{-2}}$'
+                )
 
-            labels.append(
-                rf'{BAR_LABELS[method][i]}: {irf_mean:.3f} W m$^{{-2}}$'
+            handles = [
+                Patch(
+                    facecolor=color_lookup[variant],
+                    edgecolor='k',
+                    alpha=BAR_ALPHA,
+                    label=label
+                )
+                for variant, label in zip(variants, labels)
+            ]
+
+            fig = plt.figure(figsize=(5.8, 0.62))
+            apply_background(fig, fig_face_color=LEGEND_FACE_COLOR)
+            fig.legend(
+                handles=handles,
+                labels=labels,
+                loc='center',
+                ncol=1,
+                frameon=False,
+                fontsize=9,
+                title_fontsize=10.5,
+                handlelength=1.6,
+                columnspacing=1.2
             )
 
-        handles = [
-            Patch(
-                facecolor=colors[i],
-                edgecolor='k',
-                alpha=BAR_ALPHA,
-                label=labels[i]
-            )
-            for i in range(len(BAR_VARIANTS))
-        ]
+            out_path = os.path.join(out_dir, f'fig4_{method}_{split_key}_irf_bar_legend.png')
+            save_png(fig, out_path, dpi=300)
+            plt.close(fig)
+            print(f'Saved: {out_path}')
 
-        fig = plt.figure(figsize=(5.8, 0.8))
-        apply_background(fig, fig_face_color=LEGEND_FACE_COLOR)
-        fig.legend(
-            handles=handles,
-            labels=labels,
-            loc='center',
-            ncol=1,
-            frameon=False,
-            fontsize=9,
-            title_fontsize=10.5,
-            handlelength=1.6,
-            columnspacing=1.2
-        )
 
-        out_path = os.path.join(BAR_EXPORT_DIR, f'fig4_{method}_irf_bar_legend.png')
-        save_png(fig, out_path, dpi=300)
-        plt.close(fig)
-        print(f'Saved: {out_path}')
+def save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name):
+    levels = get_common_contour_levels(grid_irf, variant)
 
-# ============================================================
-# Main
-# ============================================================
-
-def main():
-    ocean_irf, ocean_area, grid_irf, overestimate = compute_irf_data()
-    levels = get_common_contour_levels(grid_irf)
-
-    fig = plt.figure(figsize=(12, 12.0))
+    fig = plt.figure(figsize=(12, 11.0))
 
     gs = fig.add_gridspec(
         3, 1,
-        height_ratios=[1.0, 1.0, 0.62],
+        height_ratios=[1.0, 1.0, 0.35],
         hspace=0.25,
         bottom=0.065,
         top=0.965,
@@ -753,16 +752,32 @@ def main():
     ax_b = fig.add_subplot(gs[1, 0], projection=ccrs.PlateCarree())
     ax_c = fig.add_subplot(gs[2, 0])
 
-    draw_irf_contour_map(ax_a, grid_irf, 'ret', format_panel_tag(0, 'nature'), levels)
-    draw_irf_contour_map(ax_b, grid_irf, 'msk', format_panel_tag(1, 'nature'), levels)
-    draw_overestimate_bars(ax_c, overestimate, format_panel_tag(2, 'nature'))
+    draw_irf_contour_map(ax_a, grid_irf, 'ret', variant, format_panel_tag(0, 'nature'), levels)
+    draw_irf_contour_map(ax_b, grid_irf, 'msk', variant, format_panel_tag(1, 'nature'), levels)
+    legend_c = draw_overestimate_bars(
+        ax_c,
+        overestimate,
+        group_keys,
+        format_panel_tag(2, 'nature'),
+        r'Global Overestimation of IRF$_{\mathrm{aci}}$'
+    )
+    shrink_axes_for_right_legend(fig, ax_c, legend_c, target_right=ax_a.get_position().x1)
 
-    out_path = os.path.join(FIG_DIR, 'fig4_irf_underly.png')
+    out_path = os.path.join(get_split_output_dir(variant), out_name)
     save_png(fig, out_path, dpi=300)
     plt.close(fig)
     print(f'Saved: {out_path}')
 
-    # Separate outputs: 16 ocean bar PNGs + 2 legend PNGs.
+# ============================================================
+# Main
+# ============================================================
+
+def main():
+    ocean_irf, ocean_area, grid_irf, overestimate = compute_irf_data()
+    for variant, group_keys, out_name in UNDERLY_FIGURES:
+        save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name)
+
+    # Separate outputs: split ocean bar PNGs + split legend PNGs.
     save_ocean_bar_pngs(ocean_irf)
     save_bar_legend_pngs(ocean_irf, ocean_area)
 

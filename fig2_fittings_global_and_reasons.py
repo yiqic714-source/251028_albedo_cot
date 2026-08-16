@@ -715,8 +715,8 @@ def main(icon_style='nature'):
     # --- Lines 2-3: Fixed sza=54.74, per-point cot, with errorbar ---
     lookup_folders_fixed_sza = ['gasdcp_surcp', 'surdcp_gascp']
     lookup_labels_fixed_sza = [
-        r'$A_{\mathrm{sfc}}$ Coupled: $k$=',
-        r'Gas Coupled: $k$='
+        r'$A_{\mathrm{sfc}}$ Coupled',
+        r'Gas Coupled'
     ]
     lookup_colors_fixed_sza = [AUX_SURFACE_COLOR, AUX_GAS_COLOR]
 
@@ -746,13 +746,13 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_fixed_sza[idx_offset],
-            'label': f'{lookup_labels_fixed_sza[idx_offset]}{k_val:.2f}'
+            'label': lookup_labels_fixed_sza[idx_offset]
         })
 
     # --- Lines 4-5: Per-point sza, with errorbar ---
     lookup_folders_sza = ['dcp', 'cp']
     lookup_labels_sza = [
-        r'SZA Coupled: $k$=',
+        r'SZA Coupled',
         r'Coupled: $k_{\mathrm{cp}}=$'
     ]
     lookup_colors_sza = [AUX_SZA_COLOR, CP_COLOR]
@@ -780,7 +780,7 @@ def main(icon_style='nature'):
             'alb_bins': alb_bins,
             'alb_std': alb_std,
             'color': lookup_colors_sza[idx_offset],
-            'label': f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
+            'label': lookup_labels_sza[idx_offset] if folder == 'dcp' else f'{lookup_labels_sza[idx_offset]}{k_val:.2f}'
         })
 
     # ================================================================
