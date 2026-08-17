@@ -210,7 +210,7 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
         return
 
     # T91
-    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.4)
+    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.74)
     k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
     alb_t91_fit = cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91))
 

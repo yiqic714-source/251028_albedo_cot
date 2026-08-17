@@ -652,6 +652,15 @@ def draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants):
     set_bar_axes_style(ax, show_ylabel=(ocean == 'NPO'), ylim=BAR_YLIMS[method])
 
 
+def print_ocean_bar_difference(ocean_irf, method, ocean, split_key, variants):
+    vals = np.asarray([ocean_irf[method][ocean].get(var, np.nan) for var in variants], dtype=float)
+    diff = vals[1] - vals[0]
+    print(
+        f'ocean={ocean} | method={method} | '
+        f'{variants[1]} - {variants[0]} = {diff:.6f}'
+    )
+
+
 def save_ocean_bar_pngs(ocean_irf):
     for method in METHODS:
         for split_key, variants in BAR_SPLITS.items():
@@ -666,11 +675,12 @@ def save_ocean_bar_pngs(ocean_irf):
                 )
                 draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants)
                 ax.set_position(BAR_AX_POS)
+                print_ocean_bar_difference(ocean_irf, method, ocean, split_key, variants)
 
                 out_path = os.path.join(out_dir, f'fig4_{method}_{ocean}_{split_key}_irf_bars.png')
                 save_png(fig, out_path, dpi=300, bbox_inches=None)
                 plt.close(fig)
-                print(f'Saved: {out_path}')
+                # print(f'Saved: {out_path}')
 
 
 def area_weighted_ocean_mean(ocean_irf, ocean_area, method, variant):
@@ -730,7 +740,7 @@ def save_bar_legend_pngs(ocean_irf, ocean_area):
             out_path = os.path.join(out_dir, f'fig4_{method}_{split_key}_irf_bar_legend.png')
             save_png(fig, out_path, dpi=300)
             plt.close(fig)
-            print(f'Saved: {out_path}')
+            # print(f'Saved: {out_path}')
 
 
 def save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name):
@@ -766,7 +776,7 @@ def save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name):
     out_path = os.path.join(get_split_output_dir(variant), out_name)
     save_png(fig, out_path, dpi=300)
     plt.close(fig)
-    print(f'Saved: {out_path}')
+    # print(f'Saved: {out_path}')
 
 # ============================================================
 # Main

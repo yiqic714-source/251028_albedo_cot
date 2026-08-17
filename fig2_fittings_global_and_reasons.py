@@ -487,11 +487,11 @@ def prepare_global_5curves_data(verbose=True, include_simulations=True):
         df, 'cot_mod08', 'albedo', bin_edges
     )
 
-    alb_t91 = cot_to_albedo(cot_range, 'quadrature', sza=54.74)
+    alb_LT = cot_to_albedo(cot_range, 'quadrature', sza=54.74)
 
     if verbose:
         print('Fitting k values for relationship panel...')
-    k_t91, lnb_t91 = fit_k_b_in_logit_space(cot_range, alb_t91)
+    k_LT, lnb_LT = fit_k_b_in_logit_space(cot_range, alb_LT)
 
     k_ret, lnb_ret, _, _ = mc_fit(
         df['ret_cot_cer'].values,
@@ -513,17 +513,17 @@ def prepare_global_5curves_data(verbose=True, include_simulations=True):
 
     panel_data = {
         'df': df,
-        'alb_t91': alb_t91,
+        'alb_LT': alb_LT,
         'ret_cot_bins': ret_cot_bins,
         'ret_alb_bins': ret_alb_bins,
         'ret_alb_std': ret_alb_std,
         'msk_cot_bins': msk_cot_bins,
         'msk_alb_bins': msk_alb_bins,
         'msk_alb_std': msk_alb_std,
-        'alb_t91_fit': cot_k_b_to_albedo(cot_range, k_t91, np.exp(lnb_t91)),
+        'alb_LT_fit': cot_k_b_to_albedo(cot_range, k_LT, np.exp(lnb_LT)),
         'alb_ret_fit': cot_k_b_to_albedo(cot_range, k_ret, np.exp(lnb_ret)),
         'alb_msk_fit': cot_k_b_to_albedo(cot_range, k_msk, np.exp(lnb_msk)),
-        'k_t91': k_t91,
+        'k_LT': k_LT,
         'k_ret': k_ret,
         'k_msk': k_msk,
     }
@@ -583,7 +583,7 @@ def draw_global_5curves_panel(
     ]
 
     dashed_labels = [
-        rf'$k_{{\mathrm{{LT}}}}$={panel_data["k_t91"]:.2f}',
+        rf'$k_{{\mathrm{{LT}}}}$={panel_data["k_LT"]:.2f}',
         rf'$k_{{\mathrm{{ret}}}}$={panel_data["k_ret"]:.2f}',
         rf'$k_{{\mathrm{{msk}}}}$={panel_data["k_msk"]:.2f}'
     ]
@@ -598,9 +598,9 @@ def draw_global_5curves_panel(
     solid_handles = []
     dashed_handles = []
 
-    h, = ax.plot(cot_range, panel_data['alb_t91'], color=LT_COLOR, lw=2, ls='-')
+    h, = ax.plot(cot_range, panel_data['alb_LT'], color=LT_COLOR, lw=2, ls='-')
     solid_handles.append(h)
-    h, = ax.plot(cot_range, panel_data['alb_t91_fit'], color=LT_COLOR, lw=1.5, ls='--', alpha=0.7)
+    h, = ax.plot(cot_range, panel_data['alb_LT_fit'], color=LT_COLOR, lw=1.5, ls='--', alpha=0.7)
     dashed_handles.append(h)
 
     if include_simulations:
