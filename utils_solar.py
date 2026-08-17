@@ -119,11 +119,11 @@ def compute_daytime_fit_data(df):
     Compute daytime-adjusted ret and msk fit lines.
     
     For each ocean-season group, for each pixel:
-      1. Compute albedo_cp_1030 using df's sza
+      1. Compute Ac_cp_1030 using df's SZA and fixed observed COT
       2. For each daytime hour (SZA < 70°), compute albedo_cp_hr
-      3. ratio_cp = albedo_cp_hr / albedo_cp_1030
-      4. albedo_ret_hr = ret_albedo * ratio_cp
-      5. Collect all (ret_cot_cer, albedo_ret_hr) points for fitting
+      3. ratio_cp = daytime-mean Ac_cp_hr / Ac_cp_1030
+      4. pseudo daytime-mean Ac = observed Ac_1030 * ratio_cp
+      5. Collect one (COT_1030, pseudo daytime-mean Ac) point per pixel for fitting
     
     Same for msk using cot_mod08 and albedo.
     
@@ -189,10 +189,8 @@ def compute_daytime_fit_data(df):
                     table_folder='cp', ocean=ocean, season=season
                 )[0]
 
-                if not np.isfinite(alb_cp_1030_ret) or not np.isfinite(alb_cp_1030_msk):
-                    continue
-
-                # For each daytime hour
+                alb_cp_day_ret = []
+                alb_cp_day_msk = []
                 for sza_hr in hr_szas:
                     alb_cp_hr_ret = cot_to_albedo(
                         np.array([ret_cot]), 'sbdart', sza=np.array([sza_hr]),
@@ -203,26 +201,36 @@ def compute_daytime_fit_data(df):
                         table_folder='cp', ocean=ocean, season=season
                     )[0]
 
-                    if not np.isfinite(alb_cp_hr_ret) or not np.isfinite(alb_cp_hr_msk):
-                        continue
+                    if np.isfinite(alb_cp_hr_ret):
+                        alb_cp_day_ret.append(alb_cp_hr_ret)
+                    if np.isfinite(alb_cp_hr_msk):
+                        alb_cp_day_msk.append(alb_cp_hr_msk)
 
-                    ratio_ret = alb_cp_hr_ret / alb_cp_1030_ret
-                    ratio_msk = alb_cp_hr_msk / alb_cp_1030_msk
+                if (
+                    np.isfinite(alb_cp_1030_ret) and
+                    not np.isclose(alb_cp_1030_ret, 0) and
+                    len(alb_cp_day_ret) > 0
+                ):
+                    ratio_ret = np.nanmean(alb_cp_day_ret) / alb_cp_1030_ret
+                    alb_ret_daymean = ret_alb * ratio_ret
+                    if np.isfinite(alb_ret_daymean):
+                        ret_cot_list.append(ret_cot)
+                        ret_alb_list.append(alb_ret_daymean)
+                        os_ret_cot.append(ret_cot)
+                        os_ret_alb.append(alb_ret_daymean)
 
-                    alb_ret_hr = ret_alb * ratio_ret
-                    alb_msk_hr = msk_alb * ratio_msk
-
-                    # Global lists
-                    ret_cot_list.append(ret_cot)
-                    ret_alb_list.append(alb_ret_hr)
-                    msk_cot_list.append(cot_msk)
-                    msk_alb_list.append(alb_msk_hr)
-
-                    # Per ocean-season lists
-                    os_ret_cot.append(ret_cot)
-                    os_ret_alb.append(alb_ret_hr)
-                    os_msk_cot.append(cot_msk)
-                    os_msk_alb.append(alb_msk_hr)
+                if (
+                    np.isfinite(alb_cp_1030_msk) and
+                    not np.isclose(alb_cp_1030_msk, 0) and
+                    len(alb_cp_day_msk) > 0
+                ):
+                    ratio_msk = np.nanmean(alb_cp_day_msk) / alb_cp_1030_msk
+                    alb_msk_daymean = msk_alb * ratio_msk
+                    if np.isfinite(alb_msk_daymean):
+                        msk_cot_list.append(cot_msk)
+                        msk_alb_list.append(alb_msk_daymean)
+                        os_msk_cot.append(cot_msk)
+                        os_msk_alb.append(alb_msk_daymean)
 
             # Fit per ocean-season
             if len(os_ret_cot) >= 5:
