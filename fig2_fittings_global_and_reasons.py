@@ -577,9 +577,9 @@ def draw_global_5curves_panel(
     df = panel_data['df']
 
     solid_labels = [
-        'LT',
-        'Ret Obs.',
-        'Msk Obs.'
+        'LT Relation',
+        rf'$A_{{\mathrm{{c,ret}}}}$ vs. COT',
+        rf'$A_{{\mathrm{{c,msk}}}}$ vs. COT'
     ]
 
     dashed_labels = [
@@ -643,13 +643,13 @@ def draw_global_5curves_panel(
     ax.legend(
         solid_handles + dashed_handles,
         solid_labels + dashed_labels,
-        loc='center left',
+        loc='lower center',
         bbox_to_anchor=legend_anchor,
         fontsize=legend_fontsize,
-        framealpha=0.9,
+        frameon=False,
         ncol=2,
-        columnspacing=0.4,
-        labelspacing=1.5
+        columnspacing=2.0,
+        labelspacing=0.6
     )
 
     ax.text(-0.03, 1.01, f'{format_panel_tag(tag_index, icon_style)}',
