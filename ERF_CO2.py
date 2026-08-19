@@ -4,15 +4,30 @@ import os
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.pyplot as plt
+import matplotlib
 import netCDF4 as nc
 import numpy as np
-from cartopy.util import add_cyclic_point
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import Normalize
+from matplotlib.cm import ScalarMappable
+from shapely.geometry import box
+from shapely.ops import unary_union
 
 
 DATA_DIR = "/home/chenyiqi/251028_albedo_cot/cmip6"
-OUTPUT_FILE = "/home/chenyiqi/251028_albedo_cot/figs/ERF_CO2_annual.png"
+OUTPUT_FILE = "/home/chenyiqi/251028_albedo_cot/figs/figsupp_ERF_CO2_ocean_regions.png"
 VARIABLES = ("rsd", "rld", "rsu", "rlu")
+CORRECTION_FACTOR = 2.16
+
+OCEANS = {
+    "NPO": [[-170, 20, -100, 60], [-180, 20, -170, 60], [105, 20, 180, 60]],
+    "NAO": [[-100, 55, 45, 60], [-100, 40, 27, 55], [-100, 30, 45, 40], [-100, 20, 30, 30]],
+    "TPO": [[-170, 16, -100, 20], [-170, 13, -89, 16], [-170, 9, -84, 13], [-170, -20, -70, 9], [100, 0, 180, 20], [130, -20, 180, 0], [-180, -20, -170, 20]],
+    "TAO": [[-100, 16, -15, 20], [-84, 9, -13, 16], [-60, -20, 15, 9]],
+    "TIO": [[30, 0, 100, 30], [30, -20, 130, 0]],
+    "SPO": [[-170, -60, -70, -20], [130, -60, 180, -20], [-180, -60, -170, -20]],
+    "SAO": [[-70, -60, 20, -20]],
+    "SIO": [[20, -60, 130, -20]],
+}
 
 
 def load_variable(variable, experiment):
@@ -24,16 +39,15 @@ def load_variable(variable, experiment):
 
     monthly_data = []
     lat = lon = None
-    for file_path in file_paths:
-        if os.path.getsize(file_path) == 0:
-            raise OSError(f"Empty NetCDF file: {file_path}")
-        with nc.Dataset(file_path, "r") as dataset:
-            monthly_data.append(
-                np.ma.filled(dataset.variables[variable][:, 0, :, :], np.nan).astype(np.float32)
-            )
-            if lat is None:
-                lat = dataset.variables["lat"][:].astype(np.float32)
-                lon = dataset.variables["lon"][:].astype(np.float32)
+    # for file_path in file_paths:
+    file_path = file_paths[-1]
+    if os.path.getsize(file_path) == 0:
+        raise OSError(f"Empty NetCDF file: {file_path}")
+    with nc.Dataset(file_path, "r") as dataset:
+        monthly_data.append(np.ma.filled(dataset.variables[variable][:, -1, :, :], np.nan).astype(np.float32))
+        if lat is None:
+            lat = dataset.variables["lat"][:].astype(np.float32)
+            lon = dataset.variables["lon"][:].astype(np.float32)
     return np.concatenate(monthly_data, axis=0), lat, lon
 
 
@@ -46,13 +60,24 @@ def annual_mean(data):
     return np.nanmean(monthly_data, axis=(0, 1))
 
 
-def area_weighted_global_mean(data, lat):
-    """Calculate a longitude-latitude grid area-weighted mean using cos(latitude)."""
+def area_weighted_mean(data, lat, region_mask=None):
     weights = np.cos(np.deg2rad(lat))[:, np.newaxis]
     valid = np.isfinite(data)
-    weighted_sum = np.sum(np.where(valid, data * weights, 0.0))
-    weight_sum = np.sum(np.where(valid, weights, 0.0))
-    return weighted_sum / weight_sum
+    if region_mask is not None:
+        valid &= region_mask
+    return np.sum(np.where(valid, data * weights, 0.0)) / np.sum(np.where(valid, weights, 0.0))
+
+
+def region_geometry(regions):
+    return unary_union([box(west, south, east, north) for west, south, east, north in regions])
+
+
+def region_mask(lat, lon, regions):
+    lon_grid, lat_grid = np.meshgrid(((lon + 180) % 360) - 180, lat)
+    mask = np.zeros(lat_grid.shape, dtype=bool)
+    for west, south, east, north in regions:
+        mask |= (lon_grid >= west) & (lon_grid <= east) & (lat_grid >= south) & (lat_grid <= north)
+    return mask
 
 
 def main():
@@ -63,55 +88,47 @@ def main():
         control, control_lat, control_lon = load_variable(variable, "control")
         if not (np.array_equal(lat, control_lat) and np.array_equal(lon, control_lon)):
             raise ValueError(f"Coordinate mismatch for {variable}")
-        four_x_co2_annual = annual_mean(four_x_co2)
-        control_annual = annual_mean(control)
-        flux_difference[variable] = four_x_co2_annual - control_annual
+        flux_difference[variable] = annual_mean(four_x_co2) - annual_mean(control)
 
     annual_erf = (
-        flux_difference["rsd"]
-        + flux_difference["rld"]
-        - flux_difference["rsu"]
-        - flux_difference["rlu"]
+        flux_difference["rsd"] + flux_difference["rld"]
+        - flux_difference["rsu"] - flux_difference["rlu"]
     )
-    global_mean = area_weighted_global_mean(annual_erf, lat)
-    finite_values = annual_erf[np.isfinite(annual_erf)]
-    limit = np.nanpercentile(np.abs(finite_values), 99)
-    norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
+    global_mean = area_weighted_mean(annual_erf, lat)
+    print(f"Global mean RF 4xCO2: {global_mean:.6f} W m-2")
+    region_values = {}
+    for name, regions in OCEANS.items():
+        mask = region_mask(lat, lon, regions)
+        region_mean = area_weighted_mean(annual_erf, lat, mask)
+        region_values[name] = region_mean / global_mean * CORRECTION_FACTOR
+
+    valid_region_values = np.array(list(region_values.values()))
+    norm = Normalize(vmin=valid_region_values.min(), vmax=valid_region_values.max())
+    cmap = matplotlib.colormaps["viridis"]
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    fig, ax = plt.subplots(
-        figsize=(15, 8),
-        subplot_kw={"projection": ccrs.Robinson(central_longitude=180)},
-        constrained_layout=True,
-    )
-    annual_erf_cyclic = add_cyclic_point(annual_erf, coord=lon)[0]
-    lon_cyclic = np.append(lon, lon[0] + 360)
-    mesh = ax.pcolormesh(
-        lon_cyclic,
-        lat,
-        annual_erf_cyclic,
-        transform=ccrs.PlateCarree(),
-        cmap="RdBu_r",
-        norm=norm,
-        shading="auto",
-    )
-    ax.add_feature(cfeature.LAND, facecolor="0.85", zorder=1)
-    ax.coastlines(linewidth=0.45)
-    ax.set_global()
-    ax.gridlines(linewidth=0.35, color="gray", alpha=0.5, linestyle="--")
-    ax.set_title("Annual Global Distribution of ERF CO2", fontsize=15)
-    colorbar = fig.colorbar(mesh, ax=ax, orientation="horizontal", shrink=0.75, pad=0.04)
-    colorbar.set_label("ERF CO2 (W m$^{-2}$)")
-    fig.suptitle(
-        "ERF CO2: (4xCO2 - control) of (rsd + rld - rsu - rlu)\n"
-        f"Area-weighted global mean: {global_mean:.3f} W m$^{{-2}}",
-        fontsize=16,
-    )
+    fig, ax = plt.subplots(figsize=(14, 6), subplot_kw={"projection": ccrs.PlateCarree()})
+    ax.set_extent([-180, 180, -60, 60], crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.OCEAN, facecolor="white", zorder=0)
+    ax.add_feature(cfeature.LAND, facecolor="0.88", edgecolor="black", linewidth=0.5, zorder=4)
+
+    for name, regions in OCEANS.items():
+        geometry = region_geometry(regions)
+        ax.add_geometries(
+            [geometry], ccrs.PlateCarree(), facecolor=cmap(norm(region_values[name])),
+            edgecolor="0.25", linewidth=1.0, zorder=2,
+        )
+        representative = geometry.representative_point()
+        ax.text(representative.x, representative.y, f"{name}\n{region_values[name]:.2f}",
+                transform=ccrs.PlateCarree(), ha="center", va="center", fontsize=9, zorder=5)
+
+    ax.coastlines(linewidth=0.7, zorder=5)
+    ax.gridlines(draw_labels=True, linewidth=0.4, color="gray", alpha=0.5, linestyle="--")
+    colorbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, orientation="horizontal", shrink=0.7, aspect=40, pad=0.08)
+    colorbar.set_label(r'$\mathrm{ERF}_{\mathrm{CO2}}$ (W m$^{-2}$)')
     fig.savefig(OUTPUT_FILE, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {OUTPUT_FILE}")
-    print(f"Area-weighted annual global mean ERF_CO2: {global_mean:.6f} W m-2")
-    print(f"Grid-cell ERF range: {np.nanmin(annual_erf):.3f} to {np.nanmax(annual_erf):.3f} W m-2")
 
 
 if __name__ == "__main__":
