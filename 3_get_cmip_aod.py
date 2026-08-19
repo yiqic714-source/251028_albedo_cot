@@ -10,13 +10,8 @@ import pandas as pd
 
 # -------------------------- Configuration --------------------------
 exp = 'HadGEM3'
-# File paths
-if exp == 'HadGEM3':
-    nat_file = '/home/chenyiqi/251201_ERFaci/cmip6/od550aer_AERmon_HadGEM3-GC31-LL_hist-aer_r1i1p1f3_gn_185001-194912.nc'
-    aer_file = '/home/chenyiqi/251201_ERFaci/cmip6/od550aer_AERmon_HadGEM3-GC31-LL_hist-aer_r1i1p1f3_gn_195001-202012.nc'
-elif exp == 'NorESM2':
-    nat_file = '/home/chenyiqi/251201_ERFaci/cmip6/od550aer_AERmon_NorESM2-LM_hist-nat_r1i1p1f1_gn_201501-202012.nc'
-    aer_file = '/home/chenyiqi/251201_ERFaci/cmip6/od550aer_AERmon_NorESM2-LM_hist-aer_r1i1p1f1_gn_201501-202012.nc'
+nat_file = 'cmip6/od550aer_AERmon_HadGEM3-GC31-LL_hist-aer_r1i1p1f3_gn_185001-194912.nc'
+aer_file = 'cmip6/od550aer_AERmon_HadGEM3-GC31-LL_hist-aer_r1i1p1f3_gn_195001-202012.nc'
 lsmask_path = "/data/chenyiqi/251007_tropic/landsea.nc"
 
 # time range of nat/aer
@@ -28,7 +23,6 @@ aer_end_year = 2020
 # Output configuration
 output_dir = '/home/chenyiqi/251028_albedo_cot/processed_data'
 os.makedirs(output_dir, exist_ok=True)
-# 输出文件名：体现nat(1850-1860)和aer(2010-2020)的时间范围
 csv_filename = os.path.join(output_dir, f'cmip6_AodDiff_nat{nat_start_year}to{nat_end_year}_aer{aer_start_year}to{aer_end_year}_{exp}.csv')
 plot_filename = f'/home/chenyiqi/251028_albedo_cot/figs/lnAOD_diff_global_nat{nat_start_year}to{nat_end_year}_aer{aer_start_year}to{aer_end_year}_{exp}.png'
 
