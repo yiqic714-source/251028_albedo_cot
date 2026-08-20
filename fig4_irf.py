@@ -769,7 +769,7 @@ def save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name):
         overestimate,
         group_keys,
         format_panel_tag(2, 'nature'),
-        r'Global Overestimation of IRF$_{\mathrm{aci}}$'
+        r'Relative Overestimation of IRF$_{\mathrm{aci}}$'
     )
     shrink_axes_for_right_legend(fig, ax_c, legend_c, target_right=ax_a.get_position().x1)
 

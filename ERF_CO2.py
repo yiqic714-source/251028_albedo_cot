@@ -95,12 +95,14 @@ def main():
         - flux_difference["rsu"] - flux_difference["rlu"]
     )
     global_mean = area_weighted_mean(annual_erf, lat)
-    print(f"Global mean RF 4xCO2: {global_mean:.6f} W m-2")
     region_values = {}
+    all_regions_mask = np.zeros(annual_erf.shape, dtype=bool)
     for name, regions in OCEANS.items():
         mask = region_mask(lat, lon, regions)
+        all_regions_mask |= mask
         region_mean = area_weighted_mean(annual_erf, lat, mask)
         region_values[name] = region_mean / global_mean * CORRECTION_FACTOR
+    all_regions_mean = area_weighted_mean(annual_erf, lat, all_regions_mask)
 
     valid_region_values = np.array(list(region_values.values()))
     norm = Normalize(vmin=valid_region_values.min(), vmax=valid_region_values.max())
@@ -116,19 +118,21 @@ def main():
         geometry = region_geometry(regions)
         ax.add_geometries(
             [geometry], ccrs.PlateCarree(), facecolor=cmap(norm(region_values[name])),
-            edgecolor="0.25", linewidth=1.0, zorder=2,
+            edgecolor="0.25", linestyle="--", linewidth=1.0, zorder=2,
         )
-        representative = geometry.representative_point()
-        ax.text(representative.x, representative.y, f"{name}\n{region_values[name]:.2f}",
-                transform=ccrs.PlateCarree(), ha="center", va="center", fontsize=9, zorder=5)
-
     ax.coastlines(linewidth=0.7, zorder=5)
     ax.gridlines(draw_labels=True, linewidth=0.4, color="gray", alpha=0.5, linestyle="--")
     colorbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), ax=ax, orientation="horizontal", shrink=0.7, aspect=40, pad=0.08)
-    colorbar.set_label(r'$\mathrm{ERF}_{\mathrm{CO2}}$ (W m$^{-2}$)')
+    colorbar.set_label(r'$\mathrm{ERF}_{\mathrm{CO2}}$ (W m$^{-2}$)', fontsize=14)
     fig.savefig(OUTPUT_FILE, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {OUTPUT_FILE}")
+    print(f"Global area-weighted RF_4xCO2: {global_mean:.6f} W m-2")
+    print(f"All ocean regions combined area-weighted RF_4xCO2: {all_regions_mean:.6f} W m-2")
+    print(f"All ocean regions combined area-weighted ERF_CO2: {CORRECTION_FACTOR/global_mean*all_regions_mean:.6f} W m-2")
+    print("Corrected regional ERF_CO2 (W m-2):")
+    for name in OCEANS:
+        print(f"  {name}: {region_values[name]:.6f}")
 
 
 if __name__ == "__main__":
