@@ -17,6 +17,7 @@ FIG_DIR = f'{BASE_PATH}/figs'
 SENSITIVITY_AC1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_1030.csv'
 SENSITIVITY_COT1030_CSV = f'{BASE_PATH}/processed_data/sensitivity_albedo_vs_cot_day.csv'
 BELLOUIN2013_CSV = f'{BASE_PATH}/processed_data/Bellouin2013.csv'
+BAR_DIFF_CSV = f'{BASE_PATH}/processed_data/fig4_bar_diff_orig_minus_ac1030.csv'
 os.makedirs(FIG_DIR, exist_ok=True)
 
 # Output folder for the split separate bar PNGs and legend PNGs
@@ -33,8 +34,8 @@ CONTOUR_COLOR = '#7B3294'  # purple contour lines for both panels
 MAP_EXTENT = [-180, 180, -60, 60]
 
 PANEL_TITLES = {
-    'ret': r'IRF$_{\mathrm{aci}}$ Using Cloud-Retrieval Region',
-    'msk': r'IRF$_{\mathrm{aci}}$ Using Cloud-Mask Region',
+    'ret': r'IRF$_{\mathrm{aci}}$ (Cloud-Retrieval)',
+    'msk': r'IRF$_{\mathrm{aci}}$ (Cloud-Mask)',
 }
 
 # T91/uncorrected parameters used for the third bar in the separate ocean PNGs
@@ -556,7 +557,6 @@ def draw_overestimate_bars(ax, overestimate, group_keys, panel_tag, title):
     ax.axvline(0.0, color='0.25', linewidth=1.0, linestyle='--')
     ax.set_yticks(y)
     ax.set_yticklabels(group_labels, fontsize=11)
-    ax.set_xlabel('Overestimate', fontsize=12)
     ax.set_title(title, fontsize=13, pad=7)
     ax.text(-0.01, 1.01, panel_tag,
             transform=ax.transAxes, fontsize=17, va='bottom', ha='left')
@@ -652,13 +652,20 @@ def draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants):
     set_bar_axes_style(ax, show_ylabel=(ocean == 'NPO'), ylim=BAR_YLIMS[method])
 
 
-def print_ocean_bar_difference(ocean_irf, method, ocean, split_key, variants):
-    vals = np.asarray([ocean_irf[method][ocean].get(var, np.nan) for var in variants], dtype=float)
-    diff = vals[1] - vals[0]
-    print(
-        f'ocean={ocean} | method={method} | '
-        f'{variants[1]} - {variants[0]} = {diff:.6f}'
-    )
+def save_bar_differences(ocean_irf):
+    """Save orig - ac1030 bar differences for both retrieval methods."""
+    records = []
+    for method in METHODS:
+        for ocean in oceans:
+            ac1030 = ocean_irf[method][ocean].get('ac1030', np.nan)
+            orig = ocean_irf[method][ocean].get('orig', np.nan)
+            records.append({
+                'ocean': ocean,
+                'method': method,
+                'bar_diff': orig - ac1030,
+            })
+    os.makedirs(os.path.dirname(BAR_DIFF_CSV), exist_ok=True)
+    pd.DataFrame(records).to_csv(BAR_DIFF_CSV, index=False)
 
 
 def save_ocean_bar_pngs(ocean_irf):
@@ -675,8 +682,6 @@ def save_ocean_bar_pngs(ocean_irf):
                 )
                 draw_single_ocean_bar(ax, ocean_irf, method, ocean, variants)
                 ax.set_position(BAR_AX_POS)
-                print_ocean_bar_difference(ocean_irf, method, ocean, split_key, variants)
-
                 out_path = os.path.join(out_dir, f'fig4_{method}_{ocean}_{split_key}_irf_bars.png')
                 save_png(fig, out_path, dpi=300, bbox_inches=None)
                 plt.close(fig)
@@ -786,6 +791,8 @@ def main():
     ocean_irf, ocean_area, grid_irf, overestimate = compute_irf_data()
     for variant, group_keys, out_name in UNDERLY_FIGURES:
         save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name)
+
+    save_bar_differences(ocean_irf)
 
     # Separate outputs: split ocean bar PNGs + split legend PNGs.
     save_ocean_bar_pngs(ocean_irf)
