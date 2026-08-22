@@ -808,17 +808,17 @@ def main(icon_style='nature'):
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_quad[sorted_idx],
         color=LT_COLOR, lw=2,
-        label=rf'Analytical: $k_\mathrm{{LT}}$={k_quad:.2f}'
+        label=rf'LT Relation: $k_\mathrm{{LT}}$={k_quad:.2f}'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_mono[sorted_idx],
         color=AUX_VS_COLOR, lw=2, linestyle='--',
-        label='Simu. VIS'
+        label='Simulated, Visible'
     )
     ax1.plot(
         df['ret_cot_cer'].values[sorted_idx], alb_sbd[sorted_idx],
         color=DCP_COLOR, lw=2,
-        label=rf'Simu. SW: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
+        label=rf'Simulated, Shortwave: $k_\mathrm{{dcp}}$={k_sbd:.2f}'
     )
     ax1.set_xlim(0, 60)
     ax1.set_xlabel('COT', fontsize=14, fontweight='medium')
@@ -826,7 +826,7 @@ def main(icon_style='nature'):
     ax1.tick_params(axis='both', labelsize=11)
     ax1.text(-0.01, 1.01, f'{format_panel_tag(0, icon_style)}',
              transform=ax1.transAxes, fontsize=17, va='bottom', ha='left')
-    ax1.set_title('LT vs. Dcp Simu.', fontsize=14, loc='center', pad=4.5)
+    ax1.set_title('LT vs. Dcp', fontsize=14, loc='center', pad=4.5)
     ax1.legend(loc='lower right', fontsize=10.5, framealpha=0.9)
 
     # ================================================================
@@ -859,7 +859,7 @@ def main(icon_style='nature'):
     ax2.tick_params(axis='both', labelsize=11)
     ax2.text(-0.01, 1.01, f'{format_panel_tag(1, icon_style)}',
              transform=ax2.transAxes, fontsize=17, va='bottom', ha='left')
-    ax2.set_title('Dcp Simu. vs. Cp Simu.', fontsize=14, loc='center', pad=4.5)
+    ax2.set_title('Dcp vs. Cp', fontsize=14, loc='center', pad=4.5)
     ax2.legend(loc='lower right', fontsize=10.5, framealpha=0.5)
 
     # ================================================================
@@ -880,7 +880,7 @@ def main(icon_style='nature'):
     add_p_value_annotation(ax3, 3, 4, aod_cot_low, aod_cot_high, p_aod_cot)
     ax3.text(-0.01, 1.01, f'{format_panel_tag(2, icon_style)}',
              transform=ax3.transAxes, fontsize=17, va='bottom', ha='left')
-    ax3.set_title('Cp Simu. vs. Ret Obs.', fontsize=14, loc='center', pad=4.5)
+    ax3.set_title('Cp vs. Ret', fontsize=14, loc='center', pad=4.5)
 
     # ================================================================
     # Panel (d): fig3 panel d (boxplot: unr_fra vs aod_unr)
@@ -900,7 +900,7 @@ def main(icon_style='nature'):
     add_p_value_annotation(ax4, 3, 4, aod_unr_low, aod_unr_high, p_aod_unr)
     ax4.text(-0.01, 1.01, f'{format_panel_tag(3, icon_style)}',
              transform=ax4.transAxes, fontsize=17, va='bottom', ha='left')
-    ax4.set_title('Ret Obs. vs. Msk Obs.', fontsize=14, loc='center', pad=4.5)
+    ax4.set_title('Ret vs. Msk', fontsize=14, loc='center', pad=4.5)
 
     # Save figure
     plt.savefig(FIG_SAVE_PATH, dpi=300, bbox_inches='tight')

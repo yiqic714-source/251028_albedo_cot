@@ -3,12 +3,14 @@
 tablesupp_sensitivity_satellite.py
 
 Replicate the k_ret/lnb_ret/k_msk/lnb_msk computation from
-fig2_fittings_global_and_reasons.py panel (a), but with two alternative
+fig2_fittings_global_and_reasons.py panel (a), but with alternative
 filtering conditions instead of the default (MIN_COT=2.5, MIN_CF=0.1).
 
 Conditions tested:
-  1. cot_gt_4:       min_cot_mod08=4.0, min_ret_cot_cer=4.0, min_cf=0.1
-  2. cf_liq_gt_0.25: min_cot_mod08=2.5, min_ret_cot_cer=2.5, min_cf=0.25
+  1. cot_gt_4:         min_cot_mod08=4.0, min_ret_cot_cer=4.0, min_cf=0.1
+  2. cot_gt_0.5:       min_cot_mod08=0.5, min_ret_cot_cer=0.5, min_cf=0.1
+  3. cf_liq_gt_0.25:   min_cot_mod08=2.5, min_ret_cot_cer=2.5, min_cf=0.25
+  4. cf_liq_gt_0.05:   min_cot_mod08=2.5, min_ret_cot_cer=2.5, min_cf=0.05
 """
 
 import os
@@ -69,11 +71,24 @@ def run_once(pass_name, min_cot_mod08=2.5, min_ret_cot_cer=2.5, min_cf=0.1):
         min_ret_cot_cer=min_ret_cot_cer,
         min_cf=min_cf,
     )
-    print(f'  Data points: {len(df)}')
+    n_data = len(df)
+    print(f'  Data points after filtering: {n_data}')
 
-    if len(df) < 10:
+    result = {
+        'condition': pass_name,
+        'min_cot_mod08': min_cot_mod08,
+        'min_ret_cot_cer': min_ret_cot_cer,
+        'min_cf': min_cf,
+        'n_data': n_data,
+        'k_ret': np.nan,
+        'lnb_ret': np.nan,
+        'k_msk': np.nan,
+        'lnb_msk': np.nan,
+    }
+
+    if n_data < 10:
         print('  Too few data points, skipping.')
-        return
+        return result
 
     # --- k_ret, lnb_ret (same as fig2 panel a) ---
     k_ret, lnb_ret, _, _ = mc_fit(
@@ -95,34 +110,58 @@ def run_once(pass_name, min_cot_mod08=2.5, min_ret_cot_cer=2.5, min_cf=0.1):
         bootstrap=True
     )
 
+    result.update({
+        'k_ret': k_ret,
+        'lnb_ret': lnb_ret,
+        'k_msk': k_msk,
+        'lnb_msk': lnb_msk,
+    })
+
     print(f'  k_ret  = {k_ret:.2f},  lnb_ret  = {lnb_ret:.2f}')
     print(f'  k_msk  = {k_msk:.2f},  lnb_msk  = {lnb_msk:.2f}')
 
+    return result
+
 
 def main():
-    # Default
-    run_once(
-        pass_name='Default',
-        min_cot_mod08=2.5,
-        min_ret_cot_cer=2.5,
-        min_cf=0.1,
-    )
-    
-    # Stricter COT thresholds
-    run_once(
-        pass_name='cot_gt_4',
-        min_cot_mod08=4.0,
-        min_ret_cot_cer=4.0,
-        min_cf=0.1,
-    )
+    experiments = [
+        {
+            'pass_name': 'Default',
+            'min_cot_mod08': 2.5,
+            'min_ret_cot_cer': 2.5,
+            'min_cf': 0.1,
+        },
+        {
+            'pass_name': 'cot_gt_4',
+            'min_cot_mod08': 4.0,
+            'min_ret_cot_cer': 4.0,
+            'min_cf': 0.1,
+        },
+        {
+            'pass_name': 'cot_gt_0.5',
+            'min_cot_mod08': 0.5,
+            'min_ret_cot_cer': 0.5,
+            'min_cf': 0.1,
+        },
+        {
+            'pass_name': 'cf_liq_gt_0.25',
+            'min_cot_mod08': 2.5,
+            'min_ret_cot_cer': 2.5,
+            'min_cf': 0.25,
+        },
+        {
+            'pass_name': 'cf_liq_gt_0.05',
+            'min_cot_mod08': 2.5,
+            'min_ret_cot_cer': 2.5,
+            'min_cf': 0.05,
+        },
+    ]
 
-    # Stricter cloud fraction threshold
-    run_once(
-        pass_name='cf_liq_gt_0.25',
-        min_cot_mod08=2.5,
-        min_ret_cot_cer=2.5,
-        min_cf=0.25,
-    )
+    results = [run_once(**experiment) for experiment in experiments]
+
+    summary = pd.DataFrame(results)
+    print('\n=== Summary: sample size and fitted parameters ===')
+    print(summary.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
 
 
 if __name__ == '__main__':
