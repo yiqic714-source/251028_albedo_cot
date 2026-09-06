@@ -38,6 +38,7 @@ def cot_to_x(cot):
 
 
 def albedo_to_y(albedo):
+    albedo = np.asarray(albedo, dtype=float)
     albedo = np.clip(albedo, 1e-6, 1 - 1e-6)
     return np.log(albedo / (1 - albedo))
 
@@ -110,7 +111,7 @@ def _fit_odr_once(x, y, sx, sy, beta0=None):
     return out.beta[0], out.beta[1]
 
 
-def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42):
+def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42, calculate_uncertainty=True):
     cot = np.asarray(cot, dtype=float).ravel()
     albedo = np.asarray(albedo, dtype=float).ravel()
 
@@ -144,6 +145,9 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
             k_best, b_best = lr.slope, lr.intercept
         except Exception:
             return np.nan, np.nan, np.nan, np.nan
+
+    if not calculate_uncertainty:
+        return k_best, b_best, np.nan, np.nan
 
     rng = np.random.default_rng(random_seed)
     n = cot.size
