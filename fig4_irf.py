@@ -767,13 +767,13 @@ def save_underly_figure(grid_irf, overestimate, variant, group_keys, out_name):
     ax_b = fig.add_subplot(gs[1, 0], projection=ccrs.PlateCarree())
     ax_c = fig.add_subplot(gs[2, 0])
 
-    draw_irf_contour_map(ax_a, grid_irf, 'ret', variant, format_panel_tag(0, 'nature'), levels)
-    draw_irf_contour_map(ax_b, grid_irf, 'msk', variant, format_panel_tag(1, 'nature'), levels)
+    draw_irf_contour_map(ax_a, grid_irf, 'ret', variant, format_panel_tag(0, 'science'), levels)
+    draw_irf_contour_map(ax_b, grid_irf, 'msk', variant, format_panel_tag(1, 'science'), levels)
     legend_c = draw_overestimate_bars(
         ax_c,
         overestimate,
         group_keys,
-        format_panel_tag(2, 'nature'),
+        format_panel_tag(2, 'science'),
         r'Relative Overestimation of IRF$_{\mathrm{aci}}$'
     )
     shrink_axes_for_right_legend(fig, ax_c, legend_c, target_right=ax_a.get_position().x1)

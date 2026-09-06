@@ -910,5 +910,5 @@ def main(icon_style='nature'):
 
 
 if __name__ == '__main__':
-    main(icon_style='nature')
+    main(icon_style='science')
 

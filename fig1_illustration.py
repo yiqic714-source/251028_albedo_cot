@@ -18,7 +18,7 @@ from fig2_fittings_global_and_reasons import (
 
 
 if __name__ == "__main__":
-    icon_style = 'nature'
+    icon_style = 'science'
     if icon_style not in ('nature', 'science'):
         raise ValueError("icon_style must be 'nature' or 'science'.")
 

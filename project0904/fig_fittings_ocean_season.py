@@ -2,7 +2,7 @@
 """
 figsupp_fittings_ocean_season.py
 
-For each ocean-season, draw a Fig. 2a-style plot (4 curves: T91, CP, RET, MSK)
+For each ocean-season, draw a Fig. 2a-style plot with T91, CP, Grid, and RFOV curves
 and save per-ocean-season sensitivity coefficients to CSV.
 
 Layout: 4 rows (oceans) × 4 columns (seasons) per figure, two figures total.
@@ -10,6 +10,7 @@ Each subplot has its own legend showing solid lines with k= values.
 """
 
 import os
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -33,7 +34,9 @@ MIN_CF = 0.1
 T91_COLOR = '#222222'
 CP_COLOR = '#574cff'
 RET_COLOR = '#ff852e'
-MSK_COLOR = '#f20d38'
+GRID_COLOR = '#f20d38'
+RFOV_COLOR = '#16a085'
+FOV_INPUT_DIR = f'{BASE_PATH}/project0904/uniform_fov_product/ocean_season'
 
 season_keys = list(season_dict.keys())
 
@@ -141,43 +144,140 @@ def compute_per_ocean_season_fits(df):
             if n_pts < 5:
                 records.append({
                     'Ocean': ocean, 'Season': season_name,
-                    'k_cp': np.nan, 'lnb_cp': np.nan,
-                    'k_cp_unc': np.nan, 'lnb_cp_unc': np.nan,
-                    'k_msk': np.nan, 'lnb_msk': np.nan,
-                    'k_msk_unc': np.nan, 'lnb_msk_unc': np.nan,
+                    'k_sbd': np.nan, 'lnb_sbd': np.nan,
+                    'k_sbd_unc': np.nan, 'lnb_sbd_unc': np.nan,
+                    'k_grid': np.nan, 'lnb_grid': np.nan,
+                    'k_grid_unc': np.nan, 'lnb_grid_unc': np.nan,
                 })
                 continue
 
 
             # cp: per-point SZA
-            alb_cp_os = cot_to_albedo(
+            alb_sbd_os = cot_to_albedo(
                 sub['cot_mod08'].values, 'sbdart',
                 sza=sub['sza'].values, table_folder='cp',
                 ocean=ocean, season=season_name
             )
-            k_cp_os, lnb_cp_os, k_cp_unc, lnb_cp_unc = mc_fit(
-                sub['cot_mod08'].values, alb_cp_os,
+            k_sbd_os, lnb_sbd_os, k_sbd_unc, lnb_sbd_unc = mc_fit(
+                sub['cot_mod08'].values, alb_sbd_os,
                 cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True
             )
 
             # msk
-            k_msk_os, lnb_msk_os, k_msk_unc, lnb_msk_unc = mc_fit(
+            k_grid_os, lnb_grid_os, k_grid_unc, lnb_grid_unc = mc_fit(
                 sub['cot_mod08'].values, sub['albedo'].values,
                 cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True
             )
 
             records.append({
                 'Ocean': ocean, 'Season': season_name,
-                'k_cp': k_cp_os, 'lnb_cp': lnb_cp_os,
-                'k_cp_unc': k_cp_unc, 'lnb_cp_unc': lnb_cp_unc,
-                'k_msk': k_msk_os, 'lnb_msk': lnb_msk_os,
-                'k_msk_unc': k_msk_unc, 'lnb_msk_unc': lnb_msk_unc,
+                'k_sbd': k_sbd_os, 'lnb_sbd': lnb_sbd_os,
+                'k_sbd_unc': k_sbd_unc, 'lnb_sbd_unc': lnb_sbd_unc,
+                'k_grid': k_grid_os, 'lnb_grid': lnb_grid_os,
+                'k_grid_unc': k_grid_unc, 'lnb_grid_unc': lnb_grid_unc,
             })
 
     return records
 
 
-def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
+def add_frequency_weighted_cot(df):
+    """Calculate exp(weighted mean(log(COT))) from COT frequency bins."""
+    bins = []
+    pattern = re.compile(r'^cot_freq_(\d+)_(\d+)$')
+    for column in df.columns:
+        match = pattern.match(column)
+        if match:
+            lower, upper = map(int, match.groups())
+            bins.append((lower, upper, column))
+    if not bins:
+        raise ValueError('No cot_freq_<lower>_<upper> columns found')
+
+    bins.sort()
+    frequency_columns = [column for _, _, column in bins]
+    cot_midpoints = np.array([(lower + upper) / 2 for lower, upper, _ in bins])
+    frequencies = df[frequency_columns].apply(
+        pd.to_numeric, errors='coerce'
+    ).fillna(0).clip(lower=0).to_numpy(dtype=float)
+    weights = frequencies.sum(axis=1)
+    weighted_log_cot = np.divide(
+        frequencies @ np.log(cot_midpoints),
+        weights,
+        out=np.full(len(df), np.nan),
+        where=weights > 0,
+    )
+    result = df.copy()
+    result['cot_fov'] = np.exp(weighted_log_cot)
+    return result
+
+
+def load_fov_ocean_season_data():
+    frames = []
+    for file_path in sorted(os.listdir(FOV_INPUT_DIR)):
+        if not file_path.endswith('.csv'):
+            continue
+        ocean, season_name = file_path[:-4].rsplit('_', 1)
+        df = add_frequency_weighted_cot(
+            pd.read_csv(os.path.join(FOV_INPUT_DIR, file_path))
+        )
+        df['ret_albedo'] = pd.to_numeric(df['ret_albedo'], errors='coerce')
+        df['ocean'] = ocean
+        df['season'] = season_name
+        frames.append(df[['cot_fov', 'ret_albedo', 'ocean', 'season']])
+
+    if not frames:
+        raise FileNotFoundError(f'No FOV CSV files found in {FOV_INPUT_DIR}')
+    data = pd.concat(frames, ignore_index=True)
+    return data.replace([np.inf, -np.inf], np.nan).dropna(
+        subset=['cot_fov', 'ret_albedo']
+    ).query('cot_fov >= @MIN_COT and ret_albedo >= 0 and ret_albedo <= 1')
+
+
+def bin_fov_data(sub, bin_edges):
+    labels = pd.cut(sub['cot_fov'], bins=bin_edges, labels=False, include_lowest=True)
+    cot_means, albedo_means, albedo_stds = [], [], []
+    for index in range(len(bin_edges) - 1):
+        rows = sub[labels == index]
+        if len(rows) < 5:
+            continue
+        cot_means.append(rows['cot_fov'].mean())
+        albedo_means.append(rows['ret_albedo'].mean())
+        albedo_stds.append(rows['ret_albedo'].std())
+    return np.asarray(cot_means), np.asarray(albedo_means), np.asarray(albedo_stds)
+
+
+def plot_fov_cot_relation(ax, fov_sub, linear=False):
+    if fov_sub is None or len(fov_sub) < 5:
+        return np.nan
+    cot_bins, albedo_bins, albedo_std = bin_fov_data(
+        fov_sub, np.geomspace(0.5, 76, 16)
+    )
+    k, intercept = fit_k_b_in_logit_space(cot_bins, albedo_bins)
+    if linear:
+        ax.errorbar(
+            cot_to_x(cot_bins), safe_albedo_to_y(albedo_bins),
+            yerr=make_asymmetric_logit_yerr(albedo_bins, albedo_std),
+            color=RFOV_COLOR, fmt='o-', lw=1, ms=2.5,
+            capsize=2, capthick=0.6,
+        )
+        x_fit = cot_range
+        ax.plot(x_fit, k * x_fit + intercept, color=RFOV_COLOR,
+                lw=1, ls='--')
+    else:
+        ax.errorbar(
+            cot_bins, albedo_bins, yerr=albedo_std,
+            color=RFOV_COLOR, fmt='o-', lw=1, ms=2.5,
+            capsize=2, capthick=0.6,
+        )
+        cot_fit = cot_range
+        ax.plot(
+            cot_fit,
+            cot_k_b_to_albedo(cot_fit, k, np.exp(intercept)),
+            color=RFOV_COLOR, lw=1, ls='--',
+        )
+    return k
+
+
+def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges, fov_sub=None):
     """Draw a Fig. 2a-style panel for one ocean-season.
     Adds legend with solid lines showing k values for this subplot."""
     n_pts = len(sub)
@@ -193,26 +293,26 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
 
 
     # CP: per-point SZA
-    alb_cp_os = cot_to_albedo(
+    alb_sbd_os = cot_to_albedo(
         sub['cot_mod08'].values, 'sbdart',
         sza=sub['sza'].values, table_folder='cp',
         ocean=ocean, season=season_name
     )
-    k_cp_os, lnb_cp_os, _, _ = mc_fit(
-        sub['cot_mod08'].values, alb_cp_os,
+    k_sbd_os, lnb_sbd_os, _, _ = mc_fit(
+        sub['cot_mod08'].values, alb_sbd_os,
         cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True
     )
-    alb_cp_fit = cot_k_b_to_albedo(cot_range, k_cp_os, np.exp(lnb_cp_os))
+    alb_sbd_fit = cot_k_b_to_albedo(cot_range, k_sbd_os, np.exp(lnb_sbd_os))
     cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
         sub, 'cot_mod08', 'cp_albedo', bin_edges
     )
 
     # MSK
-    k_msk_os, lnb_msk_os, _, _ = mc_fit(
+    k_grid_os, lnb_grid_os, _, _ = mc_fit(
         sub['cot_mod08'].values, sub['albedo'].values,
         cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True
     )
-    alb_msk_fit = cot_k_b_to_albedo(cot_range, k_msk_os, np.exp(lnb_msk_os))
+    alb_grid_fit = cot_k_b_to_albedo(cot_range, k_grid_os, np.exp(lnb_grid_os))
     msk_cot_bins, msk_alb_bins, msk_alb_std = bin_data_by_cot(
         sub, 'cot_mod08', 'albedo', bin_edges
     )
@@ -225,13 +325,15 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
     # Plot CP
     ax.errorbar(cp_cot_bins, cp_alb_bins, yerr=cp_alb_std,
                 color=CP_COLOR, fmt='o-', lw=1, ms=2.5, capsize=2, capthick=0.6)
-    ax.plot(cot_range, alb_cp_fit, color=CP_COLOR, lw=1, ls='--', alpha=0.7)
+    ax.plot(cot_range, alb_sbd_fit, color=CP_COLOR, lw=1, ls='--', alpha=0.7)
 
+
+    rfov_k = plot_fov_cot_relation(ax, fov_sub, linear=False)
 
     # Plot MSK
     ax.errorbar(msk_cot_bins, msk_alb_bins, yerr=msk_alb_std,
-                color=MSK_COLOR, fmt='s-', lw=1, ms=2.5, capsize=2, capthick=0.6)
-    ax.plot(cot_range, alb_msk_fit, color=MSK_COLOR, lw=1, ls='--', alpha=0.7)
+                color=GRID_COLOR, fmt='s-', lw=1, ms=2.5, capsize=2, capthick=0.6)
+    ax.plot(cot_range, alb_grid_fit, color=GRID_COLOR, lw=1, ls='--', alpha=0.7)
 
     ax.set_xlim(0, 30)
     ax.tick_params(axis='both', labelsize=7)
@@ -240,9 +342,11 @@ def draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges):
     legend_elements = [
         Line2D([0], [0], color=T91_COLOR, lw=2, ls='-',
                label=rf'T91: $k$={k_t91:.2f}'),
-        Line2D([0], [0], color=CP_COLOR, lw=2, ls='-', label=rf'Cp: $k$={k_cp_os:.2f}'),
-        Line2D([0], [0], color=MSK_COLOR, lw=2, ls='-',
-               label=rf'Msk: $k$={k_msk_os:.2f}'),
+        Line2D([0], [0], color=CP_COLOR, lw=2, ls='-', label=rf'SBDART: $k$={k_sbd_os:.2f}'),
+        Line2D([0], [0], color=RFOV_COLOR, lw=2, ls='-',
+               label=rf'RFOV: $k$={rfov_k:.2f}'),
+        Line2D([0], [0], color=GRID_COLOR, lw=2, ls='-',
+               label=rf'Grid: $k$={k_grid_os:.2f}'),
     ]
     ax.legend(handles=legend_elements, loc='lower right', fontsize=7,
               framealpha=0.5, handlelength=1.2)
@@ -270,7 +374,7 @@ def make_asymmetric_logit_yerr(alb_mean, alb_std):
     return np.vstack([y_mean - y_low, y_high - y_mean])
 
 
-def draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges):
+def draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges, fov_sub=None):
     """Draw the same curves in linearized space:
     x = ln(COT), y = ln[Ac/(1-Ac)].
     """
@@ -289,27 +393,27 @@ def draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges):
     y_t91_fit = k_t91 * x_range + lnb_t91
 
 
-    # CP
-    alb_cp_os = cot_to_albedo(
+    # SBDART
+    alb_sbd_os = cot_to_albedo(
         sub['cot_mod08'].values, 'sbdart',
         sza=sub['sza'].values, table_folder='cp',
         ocean=ocean, season=season_name
     )
-    k_cp_os, lnb_cp_os, _, _ = mc_fit(
-        sub['cot_mod08'].values, alb_cp_os,
+    k_sbd_os, lnb_sbd_os, _, _ = mc_fit(
+        sub['cot_mod08'].values, alb_sbd_os,
         cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True
     )
-    y_cp_fit = k_cp_os * x_range + lnb_cp_os
+    y_sbd_fit = k_sbd_os * x_range + lnb_sbd_os
     cp_cot_bins, cp_alb_bins, cp_alb_std = bin_data_by_cot(
         sub, 'cot_mod08', 'cp_albedo', bin_edges
     )
 
-    # MSK
-    k_msk_os, lnb_msk_os, _, _ = mc_fit(
+    # Grid
+    k_grid_os, lnb_grid_os, _, _ = mc_fit(
         sub['cot_mod08'].values, sub['albedo'].values,
         cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True
     )
-    y_msk_fit = k_msk_os * x_range + lnb_msk_os
+    y_grid_fit = k_grid_os * x_range + lnb_grid_os
     msk_cot_bins, msk_alb_bins, msk_alb_std = bin_data_by_cot(
         sub, 'cot_mod08', 'albedo', bin_edges
     )
@@ -319,39 +423,43 @@ def draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges):
     ax.plot(x_range, y_t91_fit, color=T91_COLOR, lw=1, ls='--', alpha=0.7)
 
 
-    # Plot CP
+    # Plot SBDART
     ax.errorbar(
         cot_to_x(cp_cot_bins),
         safe_albedo_to_y(cp_alb_bins),
         yerr=make_asymmetric_logit_yerr(cp_alb_bins, cp_alb_std),
         color=CP_COLOR, fmt='o-', lw=1, ms=2.5, capsize=2, capthick=0.6
     )
-    ax.plot(x_range, y_cp_fit, color=CP_COLOR, lw=1, ls='--', alpha=0.7)
+    ax.plot(x_range, y_sbd_fit, color=CP_COLOR, lw=1, ls='--', alpha=0.7)
 
 
-    # Plot MSK
+    rfov_k = plot_fov_cot_relation(ax, fov_sub, linear=True)
+
+    # Plot Grid
     ax.errorbar(
         cot_to_x(msk_cot_bins),
         safe_albedo_to_y(msk_alb_bins),
         yerr=make_asymmetric_logit_yerr(msk_alb_bins, msk_alb_std),
-        color=MSK_COLOR, fmt='s-', lw=1, ms=2.5, capsize=2, capthick=0.6
+        color=GRID_COLOR, fmt='s-', lw=1, ms=2.5, capsize=2, capthick=0.6
     )
-    ax.plot(x_range, y_msk_fit, color=MSK_COLOR, lw=1, ls='--', alpha=0.7)
+    ax.plot(x_range, y_grid_fit, color=GRID_COLOR, lw=1, ls='--', alpha=0.7)
 
     ax.tick_params(axis='both', labelsize=7)
 
     legend_elements = [
         Line2D([0], [0], color=T91_COLOR, lw=2, ls='-',
                label=rf'T91: $k$={k_t91:.2f}'),
-        Line2D([0], [0], color=CP_COLOR, lw=2, ls='-', label=rf'Cp: $k$={k_cp_os:.2f}'),
-        Line2D([0], [0], color=MSK_COLOR, lw=2, ls='-',
-               label=rf'Msk: $k$={k_msk_os:.2f}'),
+        Line2D([0], [0], color=CP_COLOR, lw=2, ls='-', label=rf'SBDART: $k$={k_sbd_os:.2f}'),
+        Line2D([0], [0], color=RFOV_COLOR, lw=2, ls='-',
+               label=rf'RFOV: $k$={rfov_k:.2f}'),
+        Line2D([0], [0], color=GRID_COLOR, lw=2, ls='-',
+               label=rf'Grid: $k$={k_grid_os:.2f}'),
     ]
     ax.legend(handles=legend_elements, loc='upper left', fontsize=7,
               framealpha=0.5, handlelength=1.2)
 
 
-def make_linear_figure(df, bin_edges):
+def make_linear_figure(df, bin_edges, fov_df):
     """Create linearized figure: x = ln(COT), y = ln[Ac/(1-Ac)]."""
     n_rows = len(oceans)
     n_cols = len(season_keys)
@@ -369,7 +477,8 @@ def make_linear_figure(df, bin_edges):
             mask = (df['ocean'] == ocean) & (df['season'] == season_name)
             sub = df[mask]
 
-            draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges)
+            fov_sub = fov_df[(fov_df['ocean'] == ocean) & (fov_df['season'] == season_name)]
+            draw_ocean_season_linear_panel(ax, sub, ocean, season_name, bin_edges, fov_sub)
 
             if j == 0:
                 ax.set_ylabel(r'$\ln[A_{\mathrm{c}}/(1-A_{\mathrm{c}})]$', fontsize=9)
@@ -398,7 +507,7 @@ def make_linear_figure(df, bin_edges):
     plt.close(fig)
     print(f'Saved: {out_path}')
 
-def make_figure(df, bin_edges):
+def make_figure(df, bin_edges, fov_df):
     """Create a single figure with 8 rows (oceans) × 4 columns (seasons), no gaps."""
     n_rows = len(oceans)
     n_cols = len(season_keys)
@@ -416,7 +525,8 @@ def make_figure(df, bin_edges):
             mask = (df['ocean'] == ocean) & (df['season'] == season_name)
             sub = df[mask]
 
-            draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges)
+            fov_sub = fov_df[(fov_df['ocean'] == ocean) & (fov_df['season'] == season_name)]
+            draw_ocean_season_panel(ax, sub, ocean, season_name, bin_edges, fov_sub)
 
             # Y-axis label on the leftmost column
             if j == 0:
@@ -469,10 +579,11 @@ def main():
     print(f'Saved per-ocean-season fits to: {SENSITIVITY_CSV_PATH}')
 
     # ---- Create single figure: 8 rows × 4 columns, no gaps ----
-    make_figure(df, bin_edges)
+    fov_df = load_fov_ocean_season_data()
+    make_figure(df, bin_edges, fov_df)
 
     # ---- Create linearized figure: ln(COT) vs ln[Ac/(1-Ac)] ----
-    make_linear_figure(df, bin_edges)
+    make_linear_figure(df, bin_edges, fov_df)
 
     print('All done.')
 

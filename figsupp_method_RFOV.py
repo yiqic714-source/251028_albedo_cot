@@ -223,7 +223,7 @@ def upscale_and_interpolate(lat, lon, solar_zenith, sensor_zenith, target_shape)
 # Main process
 if __name__ == "__main__":
     # Choose panel tag style here: 'nature' -> (a)(b)(c), 'science' -> A B C.
-    icon_style = 'nature'
+    icon_style = 'science'
     if icon_style not in ('nature', 'science'):
         raise ValueError("icon_style must be 'nature' or 'science'.")
 

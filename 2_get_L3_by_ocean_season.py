@@ -41,18 +41,18 @@ YEAR = 2020
 LSMASK_PATH = "/data/chenyiqi/251007_tropic/landsea.nc"
 CERES_DIR = '/home/chenyiqi/251028_albedo_cot/CERES_L3SSF_2020'
 CERES_FILE = 'CERES_SSF1deg-Day_Terra-MODIS_Ed4.1_Subset_20200101-20201231.nc'
-MOD08_DIR = '/data/MODIS/MxD08_D3'
+MOD08_DIR = '/data/MODIS/MxD08/MxD08_D3'
 OUTPUT_DIR = '/home/chenyiqi/251028_albedo_cot/L3_product'
 
 # MOD08 variable names
-VAR_COT = 'Cloud_Optical_Thickness_Liquid_Mean'
+VAR_LNCOT = 'Cloud_Optical_Thickness_Liquid_Log_Mean'
 VAR_CER = 'Cloud_Effective_Radius_Liquid_Mean'
 VAR_AOD = 'Aerosol_Optical_Depth_Land_Ocean_Mean'
 VAR_CF_RET = 'Cloud_Retrieval_Fraction_Combined'
 VAR_CWP = 'Cloud_Water_Path_Liquid_Mean'
 VAR_CF = 'Cloud_Fraction_Day_Mean'
 VAR_CF_RET_LIQ = 'Cloud_Retrieval_Fraction_Liquid'
-VAR_COTSTD = 'Cloud_Optical_Thickness_Liquid_Standard_Deviation'
+VAR_LNCOTSTD = 'Cloud_Optical_Thickness_Liquid_Log_Standard_Deviation'
 VAR_SZA = 'Solar_Zenith_Mean'
 VAR_CTTMIN = 'Cloud_Top_Temperature_Day_Minimum'
 
@@ -196,14 +196,14 @@ def main():
             lat_mod = hdf.select('YDim')[:].astype(float)
 
             # Read 2D variables
-            cot_data = read_and_mask_mod_variable(hdf, VAR_COT)
+            cot_data = 10**(read_and_mask_mod_variable(hdf, VAR_LNCOT))
             cer_data = read_and_mask_mod_variable(hdf, VAR_CER)
             aod_data = read_and_mask_mod_variable(hdf, VAR_AOD)
             cf_ret_data = read_and_mask_mod_variable(hdf, VAR_CF_RET)
             cwp_data = read_and_mask_mod_variable(hdf, VAR_CWP)
             cf = read_and_mask_mod_variable(hdf, VAR_CF)
             cf_ret_liq = read_and_mask_mod_variable(hdf, VAR_CF_RET_LIQ)
-            cotstd_liq = read_and_mask_mod_variable(hdf, VAR_COTSTD)
+            cotstd_liq = read_and_mask_mod_variable(hdf, VAR_LNCOTSTD)
             sza = read_and_mask_mod_variable(hdf, VAR_SZA)
             cttmin = read_and_mask_mod_variable(hdf, VAR_CTTMIN)
 

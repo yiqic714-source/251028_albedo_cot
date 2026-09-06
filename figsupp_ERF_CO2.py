@@ -131,7 +131,7 @@ def draw_region_map(ax, values, norm, cmap, title, panel_index):
     ax.gridlines(draw_labels=True, color="none")
     ax.set_title(title, fontsize=14)
     ax.text(
-        -0.05, 1.05, format_panel_tag(panel_index, "nature"),
+        -0.05, 1.05, format_panel_tag(panel_index, "science"),
         transform=ax.transAxes, fontsize=17, va="bottom", ha="left",
     )
 
