@@ -5,6 +5,11 @@ Create a CERES-footprint-level MODIS/CERES matched product.
 Each output row represents one CERES footprint. The saved lat/lon are the
 centers of the 1° x 1° grid containing that CERES footprint.
 
+For each accepted footprint, the MODIS COT distribution is saved as 76
+CERES-response-weighted frequency columns for COT intervals 0-1, 1-2, ...,
+75-76. For one CERES response bin with weight w, if n MODIS pixels fall in a
+COT interval, that response bin contributes w * n to the interval frequency.
+
 @author: yiqi
 """
 
@@ -25,9 +30,8 @@ import utils_uniform_fov as uft
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-CODE_VERSION = "2026-09-04-per-footprint-v3"
-PRIMARY_FRA_THRE = 0.975
-UNCERTAINTY_THRE = 0.01
+CODE_VERSION = "2026-09-04-per-footprint-v4"
+PRIMARY_FRA_THRE = 1.0
 
 
 # CERES FOV response weights: CERES ATBD subsystem 4.4, Fig. 9.
@@ -46,12 +50,14 @@ FOV_WEIGHTS /= np.sum(FOV_WEIGHTS)
 BETA_BINS = np.arange(1.32, -1.32 + 0.01, -0.33)
 DELTA_BINS = np.arange(-1.32, 1.32 - 0.01, 0.33)
 
+# 76 COT intervals: [0,1), [1,2), ..., [74,75), [75,76].
+# np.histogram includes the rightmost edge in the final interval.
+COT_EDGES = np.arange(0.0, 77.0, 1.0)
+COT_FREQ_COLUMNS = [f"cot_freq_{i}_{i + 1}" for i in range(76)]
+
 
 def process_single_footprint(
     ret_flag,
-    nan_flag,
-    secondary_albedo,
-    secondary_uncertainty,
     in_94power,
     beta,
     delta,
@@ -60,85 +66,54 @@ def process_single_footprint(
 ):
     """Process one CERES footprint.
 
+    A footprint is retained only when every MODIS pixel inside the CERES
+    94%-power footprint is a retrievable warm liquid-cloud pixel, i.e.
+    ret_fraction == 1.0.
+
     Returns
     -------
     tuple or None
-        (ret_albedo, ret_fov_fra, ret_albedo_uncert,
-         ret_uncorrected_albedo, ret_cot, ret_cotstd)
+        (ret_albedo, ret_fov_fra, cot_freq[0], ..., cot_freq[75])
         if the footprint passes all filters; otherwise None.
-
-    Notes
-    -----
-    ret_cot and ret_cotstd are calculated using the CERES 8 x 8 FOV response
-    weights. For each angle bin i, let mu_i and var_i denote the MODIS COT
-    mean and population variance in that bin. After normalizing the weights
-    over bins with valid COT,
-
-        mu = sum_i w_i * mu_i
-
-        var = sum_i w_i * [var_i + (mu_i - mu)^2]
-
-    Thus ret_cotstd contains both within-bin and between-bin variability, but
-    both contributions are weighted by the CERES FOV response function. There
-    is no variance term across different CERES footprints.
     """
 
-    # All pixel-level arrays must describe the same MODIS pixels.
     ret_flag = np.asarray(ret_flag, dtype=bool).ravel()
-    nan_flag = np.asarray(nan_flag, dtype=bool).ravel()
-    secondary_albedo = np.asarray(secondary_albedo, dtype=float).ravel()
-    secondary_uncertainty = np.asarray(secondary_uncertainty, dtype=float).ravel()
     in_94power = np.asarray(in_94power, dtype=bool).ravel()
     beta = np.asarray(beta, dtype=float).ravel()
     delta = np.asarray(delta, dtype=float).ravel()
     cot_mod = np.asarray(cot_mod, dtype=float).ravel()
 
     n_pix = in_94power.size
-    arrays_to_check = {
+    for name, arr in {
         "ret_flag": ret_flag,
-        "nan_flag": nan_flag,
-        "secondary_albedo": secondary_albedo,
-        "secondary_uncertainty": secondary_uncertainty,
         "beta": beta,
         "delta": delta,
         "cot_mod": cot_mod,
-    }
-    for name, arr in arrays_to_check.items():
+    }.items():
         if arr.size != n_pix:
             raise ValueError(
                 "Single-footprint pixel dimension mismatch: "
                 f"in_94power has {n_pix} pixels but {name} has {arr.size}."
             )
 
-    # 1. Coarse pure-footprint screening.
+    # Require a complete pure retrievable-cloud footprint.
     pixel_num = int(np.sum(in_94power))
     if pixel_num == 0:
         return None
 
-    ret_fraction_coarse = np.sum(ret_flag & in_94power) / pixel_num
-    if ret_fraction_coarse <= PRIMARY_FRA_THRE:
+    ret_fraction = np.sum(ret_flag & in_94power) / pixel_num
+    # PRIMARY_FRA_THRE = 1.0 means exactly 100% retrievable pixels are required.
+    if ret_fraction < PRIMARY_FRA_THRE:
         return None
 
-    # Any excluded/non-liquid pixel inside the footprint rejects the footprint.
-    if np.any(nan_flag & in_94power):
+    ret_albedo = float(np.asarray(albedo_all).squeeze())
+    if not np.isfinite(ret_albedo):
         return None
 
-    albedo_uncorrected = float(np.asarray(albedo_all).squeeze())
-    if not np.isfinite(albedo_uncorrected):
-        return None
+    cot_frequency = np.zeros(76, dtype=float)
 
-    albedo_pure = albedo_uncorrected
-    uncertainty = 0.0
-    primary_fra = 1.0
-
-    cot_bin_mean = np.full(FOV_WEIGHTS.size, np.nan, dtype=float)
-    cot_bin_var = np.full(FOV_WEIGHTS.size, np.nan, dtype=float)
-    cot_bin_weight = np.full(FOV_WEIGHTS.size, np.nan, dtype=float)
-    bin_index = 0
-
-    # 2. Apply CERES 8 x 8 footprint response-function correction.
-    sec_flag = secondary_albedo > 0
-
+    # Every one of the 8 x 8 CERES response bins must contain MODIS pixels,
+    # preserving the original complete-footprint requirement.
     for ii, beta_edge in enumerate(BETA_BINS):
         mask_beta = (beta < beta_edge) & (beta >= beta_edge - 0.33)
 
@@ -150,72 +125,21 @@ def process_single_footprint(
             )
 
             if not np.any(mask_angle):
-                # Preserve the original rule: reject an incomplete 8 x 8 FOV.
                 return None
 
-            weight = FOV_WEIGHTS[ii, jj]
-
-            # Remove estimated contribution from non-retrievable-cloud/clear pixels.
-            uncertainty += np.mean(secondary_uncertainty[mask_angle]) * weight
-            albedo_pure -= np.mean(secondary_albedo[mask_angle]) * weight
-            primary_fra -= np.mean(sec_flag[mask_angle]) * weight
-
-            # MODIS COT statistics in this angle bin.
             valid_cot = cot_mod[mask_angle]
             valid_cot = valid_cot[np.isfinite(valid_cot)]
-            if valid_cot.size > 0:
-                cot_bin_mean[bin_index] = np.mean(valid_cot)
-                cot_bin_var[bin_index] = np.var(valid_cot)
-                cot_bin_weight[bin_index] = weight
 
-            bin_index += 1
+            if valid_cot.size == 0:
+                continue
 
-        # Preserve the original intermediate uncertainty rejection rule.
-        if albedo_pure <= 0:
-            return None
-        if uncertainty / albedo_pure > UNCERTAINTY_THRE * 1.5:
-            return None
-
-    # 3. Final corrected albedo and uncertainty screening.
-    if primary_fra <= 0:
-        return None
-
-    corrected_albedo = albedo_pure / primary_fra
-    if not np.isfinite(corrected_albedo) or corrected_albedo <= 0:
-        return None
-
-    if uncertainty / corrected_albedo >= UNCERTAINTY_THRE:
-        return None
-
-    # 4. CERES-response-weighted MODIS COT mean and standard deviation.
-    valid_bins = (
-        np.isfinite(cot_bin_mean)
-        & np.isfinite(cot_bin_var)
-        & np.isfinite(cot_bin_weight)
-    )
-
-    if np.any(valid_bins):
-        weights = cot_bin_weight[valid_bins]
-        weights = weights / np.sum(weights)
-        means = cot_bin_mean[valid_bins]
-        variances = cot_bin_var[valid_bins]
-
-        ret_cot = np.sum(weights * means)
-        ret_cot_var = np.sum(
-            weights * (variances + (means - ret_cot) ** 2)
-        )
-        ret_cotstd = np.sqrt(max(ret_cot_var, 0.0))
-    else:
-        ret_cot = np.nan
-        ret_cotstd = np.nan
+            counts, _ = np.histogram(valid_cot, bins=COT_EDGES)
+            cot_frequency += FOV_WEIGHTS[ii, jj] * counts
 
     return (
-        corrected_albedo,
-        primary_fra,
-        uncertainty,
-        albedo_uncorrected,
-        ret_cot,
-        ret_cotstd,
+        ret_albedo,
+        ret_fraction,
+        *cot_frequency.tolist(),
     )
 
 
@@ -224,7 +148,7 @@ def get_uniform_fov_product(
     latlon_mod,
     latlon_subsat,
     latlon_land,
-    type_data,
+    ret_flag,
     cot_mod,
     solar_zenith_cer,
     sensor_zenith_cer,
@@ -233,7 +157,7 @@ def get_uniform_fov_product(
     """Match MODIS pixels to individual CERES footprints.
 
     Each returned row corresponds to one CERES footprint. The first two
-    values are the center latitude/longitude of the 1° grid containing the
+    values are the center latitude/longitude of the 1° grid containing that
     CERES footprint center.
     """
 
@@ -283,43 +207,31 @@ def get_uniform_fov_product(
         sub_lon_min_mod = max(sub_lon_min - overlap_lon, lon_min)
         sub_lon_max_mod = min(sub_lon_max + overlap_lon, lon_max)
 
-        # CERES footprints whose centers lie in this 1° grid.
+        # Half-open grid bounds ensure one CERES footprint center belongs to
+        # only one 1° grid even if it lies exactly on an integer boundary.
         cer_mask = (
             (latlon_cer[:, 0] >= sub_lat_min)
-            & (latlon_cer[:, 0] <= sub_lat_max)
+            & (latlon_cer[:, 0] < sub_lat_max)
             & (latlon_cer[:, 1] >= sub_lon_min)
-            & (latlon_cer[:, 1] <= sub_lon_max)
+            & (latlon_cer[:, 1] < sub_lon_max)
         )
         cer_indices = np.where(cer_mask)[0]
         if cer_indices.size == 0:
             continue
 
-        # MODIS pixels in an expanded region covering these CERES footprints.
         mod_mask = (
             (latlon_mod[:, 0] >= sub_lat_min_mod)
             & (latlon_mod[:, 0] <= sub_lat_max_mod)
             & (latlon_mod[:, 1] >= sub_lon_min_mod)
             & (latlon_mod[:, 1] <= sub_lon_max_mod)
         )
-
-        sub_cld_type = type_data[mod_mask]
-        if sub_cld_type.size <= 1:
+        if np.sum(mod_mask) <= 1:
             continue
 
-        nan_flag = np.isnan(sub_cld_type)
-
-        ret_flag = sub_cld_type == 2
-        unr_flag = sub_cld_type == 1
-        clr_flag = sub_cld_type == 0
-
         sub_latlon_mod = latlon_mod[mod_mask]
+        sub_ret_flag = ret_flag[mod_mask]
         sub_cot_mod = cot_mod[mod_mask]
 
-        # Assumed albedo/uncertainty for contaminating components.
-        secondary_albedo = unr_flag * 0.30 + clr_flag * 0.08
-        secondary_uncertainty = unr_flag * 0.15 + clr_flag * 0.03
-
-        # Process each CERES footprint independently.
         for cer_idx in cer_indices:
             delta, beta = uft.calc_delta_beta(
                 latlon_cer[cer_idx : cer_idx + 1],
@@ -332,10 +244,7 @@ def get_uniform_fov_product(
             in_94power = (np.abs(beta) < 1.32) & (np.abs(delta) <= 1.32)
 
             fov_ret = process_single_footprint(
-                ret_flag=ret_flag,
-                nan_flag=nan_flag,
-                secondary_albedo=secondary_albedo,
-                secondary_uncertainty=secondary_uncertainty,
+                ret_flag=sub_ret_flag,
                 in_94power=in_94power,
                 beta=beta,
                 delta=delta,
@@ -383,7 +292,7 @@ if __name__ == "__main__":
     with nc.Dataset(landsea_file, "r") as ds:
         lsmask = ds.variables["LSMASK"][:].ravel()
         lat_ls = ds.variables["lat"][:]
-        lon_ls = ds.variables["lon"][:].copy()  # original range: 0-360
+        lon_ls = ds.variables["lon"][:].copy()
 
     lon_ls[lon_ls > 180] -= 360
     lon_mesh, lat_mesh = np.meshgrid(lon_ls, lat_ls)
@@ -415,7 +324,7 @@ if __name__ == "__main__":
 
     csv_fname = (
         f"/data/chenyiqi/251028_albedo_cot/project0904/uniform_fov_product/"
-        f"rsl_fov_v3_{year}{month:02d}_{hemisph}.csv"
+        f"rsl_fov_{year}{month:02d}_{hemisph}.csv"
     )
 
     csv_header = [
@@ -424,10 +333,7 @@ if __name__ == "__main__":
         "lon",
         "ret_albedo",
         "ret_fov_fra",
-        "ret_albedo_uncert",
-        "ret_uncorrected_albedo",
-        "ret_cot",
-        "ret_cotstd",
+        *COT_FREQ_COLUMNS,
         "solar_zenith",
         "sensor_zenith",
     ]
@@ -486,23 +392,13 @@ if __name__ == "__main__":
             )
         )
 
-        ret_mask = (
+        # True only for retrievable, cloudy, warm liquid-cloud pixels.
+        ret_flag = (
             (cloud_phase_flag == 2)
             & (retrieval_outcome_flag == 1)
-        )
-        cloud_mask = (
-            (cloud_phase_flag == 2)
             & (cloudiness_flag <= 1)
+            & (ctt_mod >= 270)
         )
-
-        # cld_type: 2 retrievable liquid cloud; 1 unretrievable liquid cloud;
-        # 0 clear; NaN excluded/non-liquid/cold cloud.
-        invalid_cloud_mask = (
-            ((cloud_phase_flag != 2) & (retrieval_outcome_flag == 1))
-            | (ctt_mod < 270)
-        )
-        cld_type = ret_mask.astype(int) + cloud_mask.astype(int)
-        cld_type = np.where(invalid_cloud_mask, np.nan, cld_type)
 
         lon_min = max(obs_window[1][0], np.nanmin(lon_mod))
         lon_max = min(obs_window[1][1], np.nanmax(lon_mod))
@@ -526,10 +422,9 @@ if __name__ == "__main__":
             print(f"File {i_mod} in {num_mod_files}, 0 footprint recorded")
             continue
 
-        # These four arrays must be filtered together so each element still
-        # describes the same MODIS pixel. cot_mod is therefore required here.
+        # These arrays must use the same MODIS-pixel mask to remain aligned.
         cot_mod = cot_mod[valid_mod].ravel()
-        cld_type = cld_type[valid_mod].ravel()
+        ret_flag = ret_flag[valid_mod].ravel()
         lat_mod = lat_mod[valid_mod].ravel()
         lon_mod = lon_mod[valid_mod].ravel()
         latlon_mod = np.stack((lat_mod, lon_mod), axis=1)
@@ -590,7 +485,7 @@ if __name__ == "__main__":
             latlon_mod,
             latlon_subsat,
             latlon_land,
-            cld_type,
+            ret_flag,
             cot_mod,
             solar_zenith_cer,
             sensor_zenith_cer,
