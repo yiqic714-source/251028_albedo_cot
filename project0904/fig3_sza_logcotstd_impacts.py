@@ -11,10 +11,12 @@ from utils_fitting import albedo_to_y, cot_to_albedo, cot_to_x, oceans, season_d
 BASE_DIR = Path(__file__).resolve().parent
 FOV_INPUT_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
 L3_INPUT_DIR = BASE_DIR / 'L3_product'
-OUTPUT_PATH = BASE_DIR / 'figs' / 'fig2_sza_lncotstd_impacts.png'
+OUTPUT_PATH = BASE_DIR / 'figs' / 'fig3_sza_lncotstd_impacts.png'
 MIN_COT = 2.5
 MIN_CF = 0.1
-MIN_GROUP_SIZE = 5
+MIN_GROUP_SIZE = 300
+SZA_EDGES = np.arange(0, 95, 5)
+STDEV_EDGES = np.arange(0, 1 + 1 / 30, 1 / 30)
 
 
 def add_frequency_statistics(df):
@@ -85,13 +87,6 @@ def add_sbdart_columns(fov_df):
         )
     return result.dropna(subset=['sbd_cot', 'sbd_albedo'])
 
-def quantile_edges(values):
-    edges = np.nanquantile(values, [0, 1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 1])
-    edges = np.maximum.accumulate(edges)
-    edges[-1] = np.nextafter(edges[-1], np.inf)
-    return edges
-
-
 def fit_k(cot, albedo):
     cot, albedo = np.asarray(cot, float), np.asarray(albedo, float)
     mask = np.isfinite(cot) & np.isfinite(albedo) & (cot > 0) & (albedo > 0) & (albedo < 1)
@@ -101,53 +96,84 @@ def fit_k(cot, albedo):
 
 
 def grouped_k(data, x_edges, y_edges, x_col, y_col, cot_col, albedo_col):
-    values = np.full((1 if y_edges is None else len(y_edges) - 1, len(x_edges) - 1), np.nan)
     x_bin = pd.cut(data[x_col], x_edges, labels=False, include_lowest=True)
-    y_bin = None if y_edges is None else pd.cut(data[y_col], y_edges, labels=False, include_lowest=True)
-    for yi in range(values.shape[0]):
-        for xi in range(values.shape[1]):
-            mask = x_bin == xi if y_bin is None else ((x_bin == xi) & (y_bin == yi))
-            subset = data[mask]
-            values[yi, xi] = fit_k(subset[cot_col], subset[albedo_col])
-    return values
+    y_bin = pd.cut(data[y_col], y_edges, labels=False, include_lowest=True)
+    x_values, y_values, k_values = [], [], []
+    for y_index in range(len(y_edges) - 1):
+        for x_index in range(len(x_edges) - 1):
+            subset = data[(x_bin == x_index) & (y_bin == y_index)]
+            if len(subset) < MIN_GROUP_SIZE:
+                continue
+            k = fit_k(subset[cot_col], subset[albedo_col])
+            if np.isfinite(k):
+                x_values.append((x_edges[x_index] + x_edges[x_index + 1]) / 2)
+                y_values.append((y_edges[y_index] + y_edges[y_index + 1]) / 2)
+                k_values.append(k)
+    return np.asarray(x_values), np.asarray(y_values), np.asarray(k_values)
 
 
-def draw_pcolor(ax, values, x_edges, y_edges, xlabel, ylabel, title, norm):
-    mesh = ax.pcolormesh(x_edges, y_edges, values, cmap='viridis', norm=norm, shading='auto')
-    ax.set(xlabel=xlabel, ylabel=ylabel, title=title, xlim=(x_edges[0], x_edges[-1]), ylim=(y_edges[0], y_edges[-1]))
-    ax.grid(color='none')
-    return mesh
+def draw_k_scatter(ax, grouped, xlabel, ylabel, title, norm):
+    x_values, y_values, k_values = grouped
+    scatter = ax.scatter(
+        x_values, y_values, c=k_values, cmap='viridis', norm=norm,
+        s=28, marker='s', edgecolors='none',
+    )
+    ax.set(
+        xlabel=xlabel, ylabel=ylabel, title=title,
+        xlim=(SZA_EDGES[0], SZA_EDGES[-1]),
+        ylim=(STDEV_EDGES[0], STDEV_EDGES[-1]),
+    )
+    ax.set_xticks(SZA_EDGES)
+    ax.set_yticks(STDEV_EDGES[::3])
+    ax.grid(color='0.85', linewidth=0.5)
+    return scatter
 
 
 def main():
-    fov_df = load_fov_df()
+    fov_df = add_sbdart_columns(load_fov_df())
     os_df = load_os_df()
-    fov_df = add_sbdart_columns(fov_df)
-    sza_edges = quantile_edges(fov_df['solar_zenith'])
-    logcot_edges = quantile_edges(fov_df['logcot_std'])
-    os_sza_edges = quantile_edges(os_df['sza'])
-    os_logcot_edges = quantile_edges(os_df['logcot_std'])
-    panel_a = grouped_k(fov_df, sza_edges, None, 'solar_zenith', None, 'cot_fov', 'sbd_albedo')
-    panel_b = grouped_k(fov_df, sza_edges, logcot_edges, 'solar_zenith', 'logcot_std', 'cot_fov', 'ret_albedo')
-    panel_c = grouped_k(os_df, os_sza_edges, os_logcot_edges, 'sza', 'logcot_std', 'cot', 'albedo')
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
-    finite_values = np.concatenate([
-        values[np.isfinite(values)]
+
+    panel_a = grouped_k(
+        fov_df, SZA_EDGES, STDEV_EDGES, 'solar_zenith', 'logcot_std',
+        'cot_fov', 'sbd_albedo'
+    )
+    panel_b = grouped_k(
+        fov_df, SZA_EDGES, STDEV_EDGES, 'solar_zenith', 'logcot_std',
+        'cot_fov', 'ret_albedo'
+    )
+    panel_c = grouped_k(
+        os_df, SZA_EDGES, STDEV_EDGES, 'sza', 'logcot_std',
+        'cot', 'albedo'
+    )
+
+    all_k = np.concatenate([
+        values[2][np.isfinite(values[2])]
         for values in (panel_a, panel_b, panel_c)
     ])
-    norm = plt.Normalize(vmin=finite_values.min(), vmax=finite_values.max())
-    meshes = [
-        draw_pcolor(axes[0], panel_a, sza_edges, [0, 1], 'Solar zenith angle', '', 'RFOV COT vs SBDART albedo', norm),
-        draw_pcolor(axes[1], panel_b, sza_edges, logcot_edges, 'Solar zenith angle', 'std(log10(COT))', 'RFOV COT vs RFOV albedo', norm),
-        draw_pcolor(axes[2], panel_c, os_sza_edges, os_logcot_edges, 'Solar zenith angle', 'std(log10(COT))', 'COT vs albedo', norm),
+    norm = plt.Normalize(vmin=all_k.min(), vmax=all_k.max())
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
+    scatters = [
+        draw_k_scatter(
+            axes[0], panel_a, 'SZA (degree)', 'std(log10(COT))',
+            'RFOV COT vs SBDART albedo', norm
+        ),
+        draw_k_scatter(
+            axes[1], panel_b, 'SZA (degree)', 'std(log10(COT))',
+            'RFOV COT vs RFOV albedo', norm
+        ),
+        draw_k_scatter(
+            axes[2], panel_c, 'SZA (degree)', 'std(log10(COT))',
+            'COT vs albedo', norm
+        ),
     ]
     axes[0].tick_params(axis='y', labelleft=False)
-    fig.colorbar(meshes[0], ax=axes, label='k')
+    fig.colorbar(scatters[0], ax=axes, label='k')
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
     fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {OUTPUT_PATH}')
     print(f'fov rows: {len(fov_df)}, os rows: {len(os_df)}')
+    print(f'valid cells: {[len(values[2]) for values in (panel_a, panel_b, panel_c)]}')
 
 
 if __name__ == '__main__':
