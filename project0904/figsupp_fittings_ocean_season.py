@@ -40,6 +40,17 @@ FOV_INPUT_DIR = f'./RFOV_product/ocean_season'
 
 season_keys = list(season_dict.keys())
 
+M14_PARAMS = {
+    'NPO': [0.00163, 0.0052, 0.337],
+    'NAO': [0.00101, 0.0052, 0.325],
+    'TPO': [0.00017, 0.0064, 0.405],
+    'TAO': [0.00027, 0.0071, 0.423],
+    'TIO': [0.00016, 0.0069, 0.425],
+    'SPO': [0.00013, 0.0062, 0.342],
+    'SAO': [0.00024, 0.0057, 0.333],
+    'SIO': [0.00028, 0.0053, 0.324],
+}
+
 
 def load_global_data():
     dfs = []
@@ -143,6 +154,8 @@ def compute_per_ocean_season_fits(df, fov_df):
                     'k_grid_unc': np.nan, 'lnb_grid_unc': np.nan,
                     'k_rfov': np.nan, 'lnb_rfov': np.nan,
                     'k_rfov_unc': np.nan, 'lnb_rfov_unc': np.nan,
+                    'k_m14': np.nan, 'lnb_m14': np.nan,
+                    'k_m14_unc': np.nan, 'lnb_m14_unc': np.nan,
                 })
                 continue
 
@@ -187,6 +200,21 @@ def compute_per_ocean_season_fits(df, fov_df):
                 k_rfov = lnb_rfov = np.nan
                 k_rfov_unc = lnb_rfov_unc = np.nan
 
+            # M14 uses the Grid rows and the same binning/fitting workflow.
+            a3, a4, a6 = M14_PARAMS[ocean]
+            m14_data = sub.copy()
+            m14_data['m14_albedo'] = (
+                a3 + a4 * m14_data['cf_ceres'].values * m14_data['cot'].values
+            ) ** a6
+            m14_cot, m14_albedo, _ = bin_data_by_cot(
+                m14_data, 'cot', 'm14_albedo', cot_range
+            )
+            k_m14, lnb_m14, k_m14_unc, lnb_m14_unc = mc_fit(
+                m14_cot, m14_albedo,
+                cot_std=0.10, albedo_std=0.20,
+                n_mc=300, bootstrap=True
+            )
+
             records.append({
                 'Ocean': ocean, 'Season': season_name,
                 'k_sbd': k_sbd_os, 'lnb_sbd': lnb_sbd_os,
@@ -195,6 +223,8 @@ def compute_per_ocean_season_fits(df, fov_df):
                 'k_grid_unc': k_grid_unc, 'lnb_grid_unc': lnb_grid_unc,
                 'k_rfov': k_rfov, 'lnb_rfov': lnb_rfov,
                 'k_rfov_unc': k_rfov_unc, 'lnb_rfov_unc': lnb_rfov_unc,
+                'k_m14': k_m14, 'lnb_m14': lnb_m14,
+                'k_m14_unc': k_m14_unc, 'lnb_m14_unc': lnb_m14_unc,
             })
 
     return records

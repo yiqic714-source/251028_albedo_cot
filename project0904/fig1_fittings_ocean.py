@@ -18,6 +18,7 @@ L3_DIR = BASE_DIR / 'L3_product'
 RFOV_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
 FIG_DIR = BASE_DIR / 'figs'
 OUTPUT_PATH = FIG_DIR / 'fig1_fittings_ocean.png'
+SENSITIVITY_CSV_PATH = BASE_DIR / 'processed_data' / 'sensitivity_albedo_vs_cot_ocean.csv'
 MIN_COT = 2.5
 MIN_CF = 0.1
 COT_EDGES = np.geomspace(MIN_COT, 76, 17)
@@ -133,15 +134,11 @@ def add_sbdart_albedo(data):
     return result.dropna(subset=['sbd_albedo'])
 
 
-def m14_values(ocean):
-    a3, a4, a6 = M14_PARAMS[ocean]
-    return (a3 + a4 * 0.5 * COT_FIT) ** a6
-
-
 def draw_ocean(ax, ocean, l3_data, rfov_data):
     l3 = l3_data[l3_data['ocean'] == ocean]
     rfov = add_sbdart_albedo(rfov_data[rfov_data['ocean'] == ocean])
     plotted = {}
+    k_m14 = b_m14 = k_m14_unc = lnb_m14_unc = np.nan
 
     # LH74 theoretical relation.
     lh74 = cot_to_albedo(COT_FIT, 'quadrature', sza=54.74)
@@ -190,20 +187,31 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
             color=GRID_COLOR, lw=1.5,
         )
 
-    # M14 function points and its fitted solid line, without uncertainty sampling.
-    m14_cot = np.linspace(MIN_COT, 60, 16)
-    a3, a4, a6 = M14_PARAMS[ocean]
-    m14_albedo = (a3 + a4 * 0.5 * m14_cot) ** a6
-    k_m14, b_m14 = fit_line(
-        m14_cot, m14_albedo, 0.0, 0.0,
-        calculate_uncertainty=False,
-    )
-    plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
-    ax.scatter(m14_cot, m14_albedo, color=M14_COLOR, s=10, marker='o', zorder=4)
-    ax.plot(
-        COT_FIT, cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14)),
-        color=M14_COLOR, lw=1.5,
-    )
+    # M14 uses the same Grid rows, binning, error bars, and fit workflow.
+    if len(l3) >= 5:
+        a3, a4, a6 = M14_PARAMS[ocean]
+        m14_data = l3.copy()
+        m14_data['m14_albedo'] = (
+            a3 + a4 * m14_data['cf_ceres'].to_numpy() *
+            m14_data['cot'].to_numpy()
+        ) ** a6
+        m14_cot, m14_albedo, m14_std = bin_data(
+            m14_data, 'cot', 'm14_albedo'
+        )
+        k_m14, b_m14, k_m14_unc, lnb_m14_unc = mc_fit(
+            m14_cot, m14_albedo,
+            cot_std=0.10, albedo_std=0.20,
+            n_mc=300, bootstrap=True,
+        )
+        plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
+        ax.errorbar(
+            m14_cot, m14_albedo, yerr=m14_std, color=M14_COLOR,
+            fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6,
+        )
+        ax.plot(
+            COT_FIT, cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14)),
+            color=M14_COLOR, lw=1.5,
+        )
 
     ax.set(xlim=(0, 60), ylim=(0, 1), title=ocean)
     ax.grid(alpha=0.25)
@@ -216,6 +224,13 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
         for name in legend_order if name in plotted
     ]
     ax.legend(handles=handles, loc='lower right', fontsize=6.5, framealpha=0.8)
+    return {
+        'Ocean': ocean,
+        'k_m14': k_m14,
+        'lnb_m14': b_m14,
+        'k_m14_unc': k_m14_unc,
+        'lnb_m14_unc': lnb_m14_unc,
+    }
 
 
 def main():
@@ -223,13 +238,15 @@ def main():
     rfov_data = load_rfov_data()
     layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
     fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
+    records = []
     for row, ocean_row in enumerate(layout):
         for column, ocean in enumerate(ocean_row):
             ax = axes[row, column]
             if ocean is None:
                 ax.axis('off')
                 continue
-            draw_ocean(ax, ocean, l3_data, rfov_data)
+            record = draw_ocean(ax, ocean, l3_data, rfov_data)
+            records.append(record)
             panel_index = row * 3 + column
             ax.text(
                 -0.03, 1.01, format_panel_tag(panel_index, 'science'),
@@ -242,6 +259,10 @@ def main():
                 ax.set_ylabel(r'$A_c$', fontsize=11)
     fig.tight_layout()
     FIG_DIR.mkdir(exist_ok=True)
+    SENSITIVITY_CSV_PATH.parent.mkdir(exist_ok=True)
+    pd.DataFrame(records).sort_values('Ocean').to_csv(
+        SENSITIVITY_CSV_PATH, index=False
+    )
     fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {OUTPUT_PATH}')
