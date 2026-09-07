@@ -8,7 +8,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils_fitting import cot_k_b_to_albedo, cot_to_albedo, cot_to_x, mc_fit, oceans
+from utils_fitting import (
+    cot_k_b_to_albedo, cot_to_albedo, cot_to_x, mc_fit, oceans,
+    format_panel_tag,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 L3_DIR = BASE_DIR / 'L3_product'
@@ -22,7 +25,7 @@ COT_FIT = np.geomspace(MIN_COT, 60, 300)
 
 LH74_COLOR = '#222222'
 SBD_COLOR = '#574cff'
-RFOV_COLOR = '#16a085'
+RFOV_COLOR = '#00bfff'
 GRID_COLOR = '#f20d38'
 M14_COLOR = '#ff852e'
 
@@ -153,7 +156,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
         plotted['RFOV'] = (RFOV_COLOR, rf'RFOV: $k$={k_rfov:.2f}')
         ax.errorbar(
             rfov_cot, rfov_albedo, yerr=rfov_std, color=RFOV_COLOR,
-            fmt='o', lw=1, ms=2.5, capsize=2, capthick=0.6,
+            fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6,
         )
         ax.plot(
             COT_FIT, cot_k_b_to_albedo(COT_FIT, k_rfov, np.exp(b_rfov)),
@@ -167,7 +170,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
         plotted['SBDART'] = (SBD_COLOR, rf'SBDART: $k$={k_sbd:.2f}')
         ax.errorbar(
             sbd_cot, sbd_albedo, yerr=sbd_std, color=SBD_COLOR,
-            fmt='D', lw=1, ms=2.5, capsize=2, capthick=0.6,
+            fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6,
         )
         ax.plot(
             COT_FIT, cot_k_b_to_albedo(COT_FIT, k_sbd, np.exp(b_sbd)),
@@ -180,7 +183,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
         plotted['Grid'] = (GRID_COLOR, rf'Grid: $k$={k_grid:.2f}')
         ax.errorbar(
             grid_cot, grid_albedo, yerr=grid_std, color=GRID_COLOR,
-            fmt='s', lw=1, ms=2.5, capsize=2, capthick=0.6,
+            fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6,
         )
         ax.plot(
             COT_FIT, cot_k_b_to_albedo(COT_FIT, k_grid, np.exp(b_grid)),
@@ -196,7 +199,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data):
         calculate_uncertainty=False,
     )
     plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
-    ax.scatter(m14_cot, m14_albedo, color=M14_COLOR, s=13, marker='o', zorder=4)
+    ax.scatter(m14_cot, m14_albedo, color=M14_COLOR, s=10, marker='o', zorder=4)
     ax.plot(
         COT_FIT, cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14)),
         color=M14_COLOR, lw=1.5,
@@ -219,7 +222,7 @@ def main():
     l3_data = load_l3_data()
     rfov_data = load_rfov_data()
     layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
-    fig, axes = plt.subplots(3, 3, figsize=(10, 8), sharex=True, sharey=True)
+    fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
     for row, ocean_row in enumerate(layout):
         for column, ocean in enumerate(ocean_row):
             ax = axes[row, column]
@@ -227,6 +230,12 @@ def main():
                 ax.axis('off')
                 continue
             draw_ocean(ax, ocean, l3_data, rfov_data)
+            panel_index = row * 3 + column
+            ax.text(
+                -0.03, 1.01, format_panel_tag(panel_index, 'science'),
+                transform=ax.transAxes, fontsize=12,
+                va='bottom', ha='left',
+            )
             if row == 2:
                 ax.set_xlabel('COT', fontsize=11)
             if column == 0:

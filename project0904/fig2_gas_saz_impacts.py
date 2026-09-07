@@ -5,21 +5,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils_fitting import cot_to_albedo, cot_to_x, albedo_to_y, mc_fit, oceans, season_dict
+from utils_fitting import (
+    cot_to_albedo, cot_to_x, albedo_to_y, mc_fit, oceans, season_dict,
+    format_panel_tag,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 RFOV_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
-OUTPUT_PATH = BASE_DIR / 'figs' / 'fig3_gas_saz_impacts.png'
 MIN_COT = 2.5
 MIN_GROUP_SIZE = 5
 
 COLORS = {
     'visible': '#606581',
-    'shortwave': '#00bfff',
-    'surface': '#F354F3',
-    'gas': '#31B704',
-    'sza': '#025D37',
-    'coupled': '#574cff',
+    'shortwave': '#F354F3',
+    'surface': '#31B704',
+    'gas': '#16a085',
+    'sza': '#574cff',
 }
 
 
@@ -82,7 +83,7 @@ def calculate_sbdart(data, folder, sza_mode):
     return result
 
 
-def fit_and_plot(ax, data, albedo_col, label, color, edges, marker=True):
+def fit_and_plot(ax, data, albedo_col, label, color, edges, marker=True, linestyle='-'):
     cot_bins, albedo_bins, albedo_std = bin_relation(data, 'cot_rfov', albedo_col, edges)
     if len(cot_bins) < 3:
         return
@@ -93,48 +94,85 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, marker=True):
     cot_fit = np.geomspace(MIN_COT, 76, 200)
     fit_albedo = 1 / (1 + np.exp(-(k * cot_to_x(cot_fit) + b)))
     ax.plot(
-        cot_fit, fit_albedo, color=color, lw=1.8, ls='-',
-        label=rf'{label}: $k$={k:.2f}',
+        cot_fit, fit_albedo, color=color, lw=1.5, ls=linestyle,
+        label=rf'{label}: $k$={k:.2f}', alpha=.75,
     )
     if marker:
         ax.errorbar(
             cot_bins, albedo_bins, yerr=albedo_std,
-            color=color, fmt='o', ms=4.5, capsize=3, alpha=.65,
+            color=color, fmt='o', lw=0.5, ms=2.2, capsize=2, alpha=.75,
         )
+
+
+def draw_ocean(ax, ocean, data):
+    edges = np.geomspace(MIN_COT, 76, 17)
+    data = data.copy()
+    data['visible'] = calculate_sbdart(data, 'dcp_0p4to0p7', 'fixed')
+    data['shortwave'] = calculate_sbdart(data, 'dcp', 'fixed')
+    data['surface'] = calculate_sbdart(data, 'gasdcp_surcp', 'fixed')
+    data['gas'] = calculate_sbdart(data, 'cp', 'fixed')
+    data['sza'] = calculate_sbdart(data, 'cp', 'per_point')
+
+    cot_fit = np.geomspace(MIN_COT, 76, 200)
+    lh74_albedo = cot_to_albedo(cot_fit, 'quadrature', sza=54.74)
+    ax.plot(cot_fit, lh74_albedo, color='#222222', lw=1.5,
+            label=r'LH74: $k$=1.00')
+
+    fit_and_plot(ax, data, 'visible', 'SBDART Reproduce', COLORS['visible'], edges)
+    fit_and_plot(ax, data, 'shortwave', '→ Shortwave', COLORS['shortwave'], edges)
+    fit_and_plot(ax, data, 'surface', r'+ real $A_{\mathrm{sfc}}$', COLORS['surface'], edges, linestyle='--')
+    fit_and_plot(ax, data, 'gas', '+ real Gas', COLORS['gas'], edges)
+    fit_and_plot(ax, data, 'sza', r'+ SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
+
+    ax.set(
+        xlim=(0, 60), ylim=(0, 1), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$',
+        title=ocean,
+    )
+    ax.grid(alpha=.25)
+    ax.tick_params(labelsize=7)
+    ax.legend(loc='lower right', fontsize=6.5, framealpha=.85)
 
 
 def main():
     data = load_rfov()
-    edges = np.geomspace(MIN_COT, 76, 17)
+    layout = [
+        ['NPO', 'NAO', None],
+        ['TPO', 'TAO', 'TIO'],
+        ['SPO', 'SAO', 'SIO'],
+    ]
+    fig, axes = plt.subplots(
+        3, 3, figsize=(9, 8), sharex=True, sharey=True,
+        squeeze=False,
+    )
+    for row, ocean_row in enumerate(layout):
+        for column, ocean in enumerate(ocean_row):
+            ax = axes[row, column]
+            if ocean is None:
+                ax.axis('off')
+                continue
+            ocean_data = data[data['ocean'] == ocean].reset_index(drop=True)
+            if len(ocean_data) < MIN_GROUP_SIZE:
+                ax.text(0.5, 0.5, 'Insufficient data', transform=ax.transAxes,
+                        ha='center', va='center', fontsize=8)
+                continue
+            draw_ocean(ax, ocean, ocean_data)
+            panel_index = row * 3 + column
+            ax.text(
+                -0.03, 1.01, format_panel_tag(panel_index, 'science'),
+                transform=ax.transAxes, fontsize=12,
+                va='bottom', ha='left',
+            )
+            if row == 2:
+                ax.set_xlabel('COT', fontsize=11)
+            if column == 0:
+                ax.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=11)
 
-    data['visible'] = calculate_sbdart(data, 'dcp_0p4to0p7', 'fixed')
-    data['shortwave'] = calculate_sbdart(data, 'dcp', 'fixed')
-    data['surface'] = calculate_sbdart(data, 'gasdcp_surcp', 'fixed')
-    data['gas'] = calculate_sbdart(data, 'cp', 'fixed') # 'surdcp_gascp'
-    data['sza'] = calculate_sbdart(data, 'cp', 'per_point')
-    data['coupled'] = calculate_sbdart(data, 'cp', 'per_point')
-
-    fig, ax = plt.subplots(figsize=(7.2, 5.2))
-    cot_fit = np.geomspace(MIN_COT, 76, 200)
-    LH74_albedo = cot_to_albedo(cot_fit, 'quadrature', sza=54.74)
-    ax.plot(cot_fit, LH74_albedo, color='#222222', lw=1.8, label=r'LH74: $k$=1.00')
-
-    fit_and_plot(ax, data, 'visible', 'SBDART Reproduce', COLORS['visible'], edges)
-    fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
-    fit_and_plot(ax, data, 'surface', r'+ real $A_{\mathrm{sfc}}$', COLORS['surface'], edges)
-    fit_and_plot(ax, data, 'gas', '+ real Gas', COLORS['gas'], edges)
-    fit_and_plot(ax, data, 'sza', r'+ SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
-    fit_and_plot(ax, data, 'coupled', 'Shortwave, All Coupled', COLORS['coupled'], edges)
-
-    ax.set(xlim=(0, 60), ylim=(0, 1), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$', title='SBDART gas and SZA impacts')
-    ax.grid(alpha=.25)
-    ax.legend(loc='lower right', fontsize=9, framealpha=.85)
     fig.tight_layout()
-    OUTPUT_PATH.parent.mkdir(exist_ok=True)
-    fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight')
+    output_path = BASE_DIR / 'figs' / 'fig2_gas_saz_impacts.png'
+    output_path.parent.mkdir(exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
-    print(f'Saved: {OUTPUT_PATH}')
-    print(f'RFOV rows: {len(data)}')
+    print(f'Saved: {output_path}')
 
 
 if __name__ == '__main__':
