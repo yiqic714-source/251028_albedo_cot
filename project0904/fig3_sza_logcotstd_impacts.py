@@ -18,7 +18,7 @@ OUTPUT_PATH = BASE_DIR / 'figs' / 'fig3_sza_lncotstd_impacts.png'
 MIN_COT = 2.5
 MIN_CF = 0.1
 MIN_GROUP_SIZE = 250
-SZA_EDGES = np.arange(0, 95, 5)
+SZA_EDGES = np.arange(0, 95, 25)
 STDEV_EDGES = np.arange(0, 1 + 1 / 30, 1 / 30)
 
 
@@ -74,7 +74,9 @@ def load_os_df():
     data = pd.concat(frames, ignore_index=True)
     data['albedo'] = ((data['sw_all'] - data['sw_clr'] * (1 - data['cf_ceres'])) / data['cf_ceres'] / data['solar_incoming'])
     mask = ((data['cf_ceres'] > MIN_CF) & (data['cf_ret_tot'] > MIN_CF) & (data['cf_liq_ceres'] / data['cf_ceres'] > .99) & (data['cot'] > MIN_COT) & data['albedo'].between(0, 1) & (data['cttmin'] >= 270))
-    return data[mask].dropna(subset=['cot', 'albedo', 'logcot_std', 'sza']).copy()
+    return data[mask].dropna(
+        subset=['cot', 'albedo', 'logcot_std', 'sza']
+    ).copy()
 
 
 def add_sbdart_columns(fov_df):
@@ -89,6 +91,19 @@ def add_sbdart_columns(fov_df):
             ocean=ocean, season=season
         )
     return result.dropna(subset=['sbd_cot', 'sbd_albedo'])
+
+def add_l3_sbdart_albedo(data):
+    result = data.copy()
+    result['sbd_albedo'] = np.nan
+    for (ocean, season), indices in result.groupby(['ocean', 'season']).groups.items():
+        rows = result.loc[indices]
+        result.loc[indices, 'sbd_albedo'] = cot_to_albedo(
+            rows['cot'].to_numpy(), 'sbdart',
+            sza=rows['sza'].to_numpy(), table_folder='cp',
+            ocean=ocean, season=season,
+        )
+    return result.dropna(subset=['sbd_albedo'])
+
 
 def fit_k(cot, albedo):
     cot, albedo = np.asarray(cot, float), np.asarray(albedo, float)
@@ -147,12 +162,83 @@ def draw_k_scatter(ax, grouped, xlabel, ylabel, title, norm):
     return scatter
 
 
+def draw_combined_scatter(ax, panel_b, panel_c, norm):
+    offset = 0.8
+    b_x, b_y, b_k = panel_b
+    c_x, c_y, c_k = panel_c
+    scatter_b = ax.scatter(
+        b_x - offset, b_y, c=b_k, cmap='viridis', norm=norm,
+        s=30, marker='o', edgecolors='white', linewidths=0.25,
+        label='RFOV COT vs RFOV albedo',
+    )
+    ax.scatter(
+        c_x + offset, c_y, c=c_k, cmap='viridis', norm=norm,
+        s=30, marker='s', edgecolors='white', linewidths=0.25,
+        label='COT vs albedo',
+    )
+    ax.set(
+        xlabel='SZA (degree)', ylabel='std(log10(COT))',
+        title='RFOV and L3 relationships',
+        xlim=(SZA_EDGES[0], SZA_EDGES[-1]),
+        ylim=(STDEV_EDGES[0], STDEV_EDGES[-1]),
+    )
+    ax.set_xticks(SZA_EDGES)
+    ax.set_yticks(STDEV_EDGES[::3])
+    ax.grid(color='0.85', linewidth=0.5)
+    ax.legend(loc='upper right', fontsize=7, framealpha=0.85)
+    return scatter_b
+
+
+def subtract_grouped_k(raw_panel, fitted_panel):
+    raw_x, raw_y, raw_k = raw_panel
+    fitted_x, fitted_y, fitted_k = fitted_panel
+    fitted = {
+        (round(x, 8), round(y, 8)): k
+        for x, y, k in zip(fitted_x, fitted_y, fitted_k)
+    }
+    x_values, y_values, differences = [], [], []
+    for x, y, k in zip(raw_x, raw_y, raw_k):
+        fitted_k_value = fitted.get((round(x, 8), round(y, 8)))
+        if fitted_k_value is not None and np.isfinite(fitted_k_value):
+            x_values.append(x)
+            y_values.append(y)
+            differences.append(k - fitted_k_value)
+    return np.asarray(x_values), np.asarray(y_values), np.asarray(differences)
+
+
+def draw_difference_scatter(ax, rfov_delta, l3_delta, norm):
+    offset = 0.8
+    rfov_x, rfov_y, rfov_values = rfov_delta
+    l3_x, l3_y, l3_values = l3_delta
+    scatter = ax.scatter(
+        rfov_x - offset, rfov_y, c=rfov_values, cmap='coolwarm', norm=norm,
+        s=30, marker='o', edgecolors='white', linewidths=0.25,
+        label='RFOV: raw $k$ - SBDART $k$',
+    )
+    ax.scatter(
+        l3_x + offset, l3_y, c=l3_values, cmap='coolwarm', norm=norm,
+        s=30, marker='s', edgecolors='white', linewidths=0.25,
+        label='L3: raw $k$ - SBDART $k$',
+    )
+    ax.set(
+        xlabel='SZA (degree)', ylabel='std(log10(COT))',
+        title='$\\Delta k$ by SZA and COT std',
+        xlim=(SZA_EDGES[0], SZA_EDGES[-1]),
+        ylim=(STDEV_EDGES[0], STDEV_EDGES[-1]),
+    )
+    ax.set_xticks(SZA_EDGES)
+    ax.set_yticks(STDEV_EDGES[::3])
+    ax.grid(color='0.85', linewidth=0.5)
+    ax.legend(loc='upper right', fontsize=7, framealpha=0.85)
+    return scatter
+
+
 def main():
     fov_df = add_sbdart_columns(load_fov_df())
     os_df = load_os_df()
 
-    panel_a = grouped_k_by_sza(
-        fov_df, SZA_EDGES, 'solar_zenith', 'logcot_std',
+    panel_a = grouped_k(
+        fov_df, SZA_EDGES, STDEV_EDGES, 'solar_zenith', 'logcot_std',
         'cot_fov', 'sbd_albedo'
     )
     panel_b = grouped_k(
@@ -163,50 +249,53 @@ def main():
         os_df, SZA_EDGES, STDEV_EDGES, 'sza', 'logcot_std',
         'cot', 'albedo'
     )
+    os_sbd_df = add_l3_sbdart_albedo(os_df)
+    panel_d = grouped_k(
+        os_sbd_df, SZA_EDGES, STDEV_EDGES, 'sza', 'logcot_std',
+        'cot', 'sbd_albedo'
+    )
 
+    rfov_delta = subtract_grouped_k(panel_b, panel_a)
+    l3_delta = subtract_grouped_k(panel_c, panel_d)
     all_k = np.concatenate([
         values[2][np.isfinite(values[2])]
-        for values in (panel_a, panel_b, panel_c)
+        for values in (panel_a, panel_b, panel_c, panel_d)
     ])
     norm = plt.Normalize(vmin=all_k.min(), vmax=all_k.max())
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
-    scatters = [
-        draw_k_scatter(
-            axes[0], panel_a, 'SZA (degree)', 'mean std(log10(COT))',
-            'RFOV COT vs SBDART albedo', norm
-        ),
-        draw_k_scatter(
-            axes[1], panel_b, 'SZA (degree)', 'std(log10(COT))',
-            'RFOV COT vs RFOV albedo', norm
-        ),
-        draw_k_scatter(
-            axes[2], panel_c, 'SZA (degree)', 'std(log10(COT))',
-            'COT vs albedo', norm
-        ),
-    ]
-    axes[0].text(
-        -0.04, 1.02, format_panel_tag(0, 'science'),
-        transform=axes[0].transAxes, fontsize=13,
-        va='bottom', ha='left',
+    delta_values = np.concatenate([rfov_delta[2], l3_delta[2]])
+    delta_limit = np.nanmax(np.abs(delta_values))
+    delta_norm = plt.Normalize(vmin=-delta_limit, vmax=delta_limit)
+    fig, axes = plt.subplots(1, 4, figsize=(21, 5), constrained_layout=True)
+    scatter_a = draw_k_scatter(
+        axes[0], panel_a, 'SZA (degree)', 'std(log10(COT))',
+        'RFOV COT vs SBDART albedo', norm
     )
-    axes[1].text(
-        -0.04, 1.02, format_panel_tag(1, 'science'),
-        transform=axes[1].transAxes, fontsize=13,
-        va='bottom', ha='left',
+    scatter_b = draw_combined_scatter(axes[1], panel_b, panel_c, norm)
+    scatter_c = draw_k_scatter(
+        axes[2], panel_d, 'SZA (degree)', 'std(log10(COT))',
+        'L3 COT vs SBDART albedo', norm
     )
-    axes[2].text(
-        -0.04, 1.02, format_panel_tag(2, 'science'),
-        transform=axes[2].transAxes, fontsize=13,
-        va='bottom', ha='left',
+    scatter_d = draw_difference_scatter(
+        axes[3], rfov_delta, l3_delta, delta_norm
     )
+    for index, ax in enumerate(axes):
+        ax.text(
+            -0.04, 1.02, format_panel_tag(index, 'science'),
+            transform=ax.transAxes, fontsize=13,
+            va='bottom', ha='left',
+        )
     axes[0].tick_params(axis='y', labelleft=False)
-    fig.colorbar(scatters[0], ax=axes, label='k')
+    axes[2].tick_params(axis='y', labelleft=False)
+    axes[3].tick_params(axis='y', labelleft=False)
+    fig.colorbar(scatter_a, ax=axes[:3], label='k')
+    fig.colorbar(scatter_d, ax=axes[3], label='Δk')
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
     fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {OUTPUT_PATH}')
     print(f'fov rows: {len(fov_df)}, os rows: {len(os_df)}')
-    print(f'valid cells: {[len(values[2]) for values in (panel_a, panel_b, panel_c)]}')
+    print(f'valid cells: {[len(values[2]) for values in (panel_a, panel_b, panel_c, panel_d)]}')
+    print(f'delta cells: {len(rfov_delta[2])}, {len(l3_delta[2])}')
 
 
 if __name__ == '__main__':
