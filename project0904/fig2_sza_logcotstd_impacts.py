@@ -13,7 +13,7 @@ FOV_INPUT_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
 L3_INPUT_DIR = BASE_DIR / 'L3_product'
 OUTPUT_PATH = BASE_DIR / 'figs' / 'fig2_sza_lncotstd_impacts.png'
 MIN_COT = 2.5
-MIN_CF = 0.25
+MIN_CF = 0.1
 MIN_GROUP_SIZE = 5
 
 
@@ -86,7 +86,7 @@ def add_sbdart_columns(fov_df):
     return result.dropna(subset=['sbd_cot', 'sbd_albedo'])
 
 def quantile_edges(values):
-    edges = np.nanquantile(values, [0, 1/6, 2/6, 3/6, 4/6, 5/6, 1])
+    edges = np.nanquantile(values, [0, 1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8, 1])
     edges = np.maximum.accumulate(edges)
     edges[-1] = np.nextafter(edges[-1], np.inf)
     return edges
@@ -141,6 +141,7 @@ def main():
         draw_pcolor(axes[1], panel_b, sza_edges, logcot_edges, 'Solar zenith angle', 'std(log10(COT))', 'RFOV COT vs RFOV albedo', norm),
         draw_pcolor(axes[2], panel_c, os_sza_edges, os_logcot_edges, 'Solar zenith angle', 'std(log10(COT))', 'COT vs albedo', norm),
     ]
+    axes[0].tick_params(axis='y', labelleft=False)
     fig.colorbar(meshes[0], ax=axes, label='k')
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
     fig.savefig(OUTPUT_PATH, dpi=300, bbox_inches='tight')
