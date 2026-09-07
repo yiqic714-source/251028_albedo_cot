@@ -6,7 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils_fitting import albedo_to_y, cot_to_albedo, cot_to_x, oceans, season_dict
+from utils_fitting import (
+    albedo_to_y, cot_to_albedo, cot_to_x, oceans, season_dict,
+    format_panel_tag,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 FOV_INPUT_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
@@ -14,7 +17,7 @@ L3_INPUT_DIR = BASE_DIR / 'L3_product'
 OUTPUT_PATH = BASE_DIR / 'figs' / 'fig3_sza_lncotstd_impacts.png'
 MIN_COT = 2.5
 MIN_CF = 0.1
-MIN_GROUP_SIZE = 300
+MIN_GROUP_SIZE = 250
 SZA_EDGES = np.arange(0, 95, 5)
 STDEV_EDGES = np.arange(0, 1 + 1 / 30, 1 / 30)
 
@@ -112,6 +115,21 @@ def grouped_k(data, x_edges, y_edges, x_col, y_col, cot_col, albedo_col):
     return np.asarray(x_values), np.asarray(y_values), np.asarray(k_values)
 
 
+def grouped_k_by_sza(data, x_edges, x_col, y_col, cot_col, albedo_col):
+    x_bin = pd.cut(data[x_col], x_edges, labels=False, include_lowest=True)
+    x_values, y_values, k_values = [], [], []
+    for x_index in range(len(x_edges) - 1):
+        subset = data[x_bin == x_index]
+        if len(subset) < MIN_GROUP_SIZE:
+            continue
+        k = fit_k(subset[cot_col], subset[albedo_col])
+        if np.isfinite(k):
+            x_values.append((x_edges[x_index] + x_edges[x_index + 1]) / 2)
+            y_values.append(subset[y_col].mean())
+            k_values.append(k)
+    return np.asarray(x_values), np.asarray(y_values), np.asarray(k_values)
+
+
 def draw_k_scatter(ax, grouped, xlabel, ylabel, title, norm):
     x_values, y_values, k_values = grouped
     scatter = ax.scatter(
@@ -133,8 +151,8 @@ def main():
     fov_df = add_sbdart_columns(load_fov_df())
     os_df = load_os_df()
 
-    panel_a = grouped_k(
-        fov_df, SZA_EDGES, STDEV_EDGES, 'solar_zenith', 'logcot_std',
+    panel_a = grouped_k_by_sza(
+        fov_df, SZA_EDGES, 'solar_zenith', 'logcot_std',
         'cot_fov', 'sbd_albedo'
     )
     panel_b = grouped_k(
@@ -154,7 +172,7 @@ def main():
     fig, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
     scatters = [
         draw_k_scatter(
-            axes[0], panel_a, 'SZA (degree)', 'std(log10(COT))',
+            axes[0], panel_a, 'SZA (degree)', 'mean std(log10(COT))',
             'RFOV COT vs SBDART albedo', norm
         ),
         draw_k_scatter(
@@ -166,6 +184,21 @@ def main():
             'COT vs albedo', norm
         ),
     ]
+    axes[0].text(
+        -0.04, 1.02, format_panel_tag(0, 'science'),
+        transform=axes[0].transAxes, fontsize=13,
+        va='bottom', ha='left',
+    )
+    axes[1].text(
+        -0.04, 1.02, format_panel_tag(1, 'science'),
+        transform=axes[1].transAxes, fontsize=13,
+        va='bottom', ha='left',
+    )
+    axes[2].text(
+        -0.04, 1.02, format_panel_tag(2, 'science'),
+        transform=axes[2].transAxes, fontsize=13,
+        va='bottom', ha='left',
+    )
     axes[0].tick_params(axis='y', labelleft=False)
     fig.colorbar(scatters[0], ax=axes, label='k')
     OUTPUT_PATH.parent.mkdir(exist_ok=True)
