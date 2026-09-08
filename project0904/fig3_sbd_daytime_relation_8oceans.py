@@ -10,7 +10,7 @@ FITS_CSV_PATH = './processed_data/fig3_sbd_daytime_relation_8oceans_fits.csv'
 COT = np.geomspace(2.5, 60, 80)
 SEASONS = ('MAM', 'JJA', 'SON', 'DJF')
 TROPICAL_OCEANS = {'TPO', 'TAO', 'TIO'}
-TROPICAL_COLORS = ("#090EA5", '#00a6a6', '#2c7fb8')
+TROPICAL_COLORS = ("#090EA5", "#35f3d0", '#2c7fb8')
 EXTRATROPICAL_COLORS = ("#f1c515", "#8b745e", "#ef7809", "#f93939", "#ec7fe6")
 LINESTYLES = (':', '--', '-')
 
