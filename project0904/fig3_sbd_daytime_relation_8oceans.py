@@ -25,7 +25,7 @@ def daytime_ocean_albedo(ocean):
 
 def main():
     fig, ax = plt.subplots(figsize=(5, 4.1))
-    lh74 = cot_to_albedo(COT, 'quadrature', sza=54.74)
+    lh74 = cot_to_albedo(COT, 'l74')
     ax.plot(COT, lh74, color='#222222', lw=1.8, label=r'LH74: $k$=1.00')
 
     tropical_index = 0

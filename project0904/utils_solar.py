@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+import pandas as pd
 
 
 def declination(day_of_year):
@@ -81,3 +82,38 @@ def daytime_latitude_weighted_albedo(
     if denominator == 0:
         return np.full_like(cot, np.nan, dtype=float)
     return numerator / denominator
+
+
+def calc_monthly_swdown(lat, year=2020, month=None):
+    """Approximate monthly mean daily-mean insolation for a latitude."""
+    if month is None:
+        raise ValueError('month is required')
+    from calendar import monthrange
+    start = pd.Timestamp(year=year, month=month, day=1)
+    days = [start + pd.Timedelta(days=i) for i in range(monthrange(year, month)[1])]
+    phi = math.radians(float(lat))
+    values = []
+    for day in days:
+        delta = declination(day.dayofyear)
+        cos_h0 = -math.tan(phi) * math.tan(delta)
+        if cos_h0 >= 1:
+            h0 = 0.0
+        elif cos_h0 <= -1:
+            h0 = math.pi
+        else:
+            h0 = math.acos(cos_h0)
+        distance_factor = 1 + 0.033 * math.cos(2 * math.pi * day.dayofyear / 365.0)
+        values.append(1361.0 / math.pi * distance_factor * (
+            h0 * math.sin(phi) * math.sin(delta) +
+            math.cos(phi) * math.cos(delta) * math.sin(h0)
+        ))
+    return float(np.mean(values))
+
+
+def calc_grid_cell_area(lat, lon_res=1.0, lat_res=1.0):
+    """Return 1-degree grid-cell area in km2."""
+    radius = 6371000.0
+    lat1 = math.radians(float(lat) - lat_res / 2)
+    lat2 = math.radians(float(lat) + lat_res / 2)
+    dlon = math.radians(lon_res)
+    return dlon * radius ** 2 * (math.sin(lat2) - math.sin(lat1)) / 1e6

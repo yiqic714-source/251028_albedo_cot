@@ -151,7 +151,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
     k_m14 = b_m14 = k_m14_unc = lnb_m14_unc = np.nan
 
     # LH74 theoretical relation.
-    lh74 = cot_to_albedo(COT_FIT, 'quadrature', sza=54.74)
+    lh74 = cot_to_albedo(COT_FIT, 'l74')
     plotted['LH74'] = (LH74_COLOR, r'LH74: $k$=1.00')
     if linear:
         ax.plot(cot_to_x(COT_FIT), albedo_to_y(lh74), color=LH74_COLOR, lw=1.5)

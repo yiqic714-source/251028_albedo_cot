@@ -113,7 +113,7 @@ def draw_global(ax, data):
     data['sza'] = calculate_sbdart(data, 'cp', 'per_point')
 
     cot_fit = np.geomspace(MIN_COT, 76, 200)
-    lh74_albedo = cot_to_albedo(cot_fit, 'quadrature', sza=54.74)
+    lh74_albedo = cot_to_albedo(cot_fit, 'l74')
     ax.plot(cot_fit, lh74_albedo, color='#222222', lw=1.8,
             label=r'LH74: $k$=1.00')
 
