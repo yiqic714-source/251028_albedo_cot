@@ -102,7 +102,7 @@ def run_erf_co2(base_dir: Path):
 from utils_fitting import cot_k_b_to_albedo, oceans, season_dict
 from utils_solar import calc_grid_cell_area, calc_monthly_swdown
 
-# dlnNd/dlnAOD
+# dlnNd/dlnAOD from Hasekamp (2019)
 LNND = {
     'NAO': 0.40,
     'TAO': 0.41,

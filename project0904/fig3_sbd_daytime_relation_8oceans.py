@@ -3,7 +3,8 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import cot_k_b_to_albedo, cot_to_albedo, mc_fit, oceans
-from utils_solar import daytime_latitude_weighted_albedo
+from utils_solar import calc_grid_cell_area, daytime_latitude_weighted_albedo
+from util_ocean_season_division import oceans_def
 
 OUTPUT_PATH = './figs/fig3_sbd_daytime_relation_8oceans.png'
 FITS_CSV_PATH = './processed_data/fig3_sbd_daytime_relation_8oceans_fits.csv'
@@ -21,6 +22,26 @@ def daytime_ocean_albedo(ocean):
         for season in SEASONS
     ]
     return np.nanmean(seasonal_albedo, axis=0)
+
+
+def ocean_area_km2(ocean, resolution=1.0):
+    """
+    Geometric surface area (km2) of an ocean basin.
+
+    Sums cos(latitude)-weighted 1-degree grid-cell areas over every
+    latitude band in each rectangular region box that defines the basin.
+    """
+    area = 0.0
+    for (west, south, east, north) in oceans_def[ocean]:
+        n_lon = (east - west) / resolution
+        lat_centers = np.arange(south + resolution / 2.0, north, resolution)
+        area += n_lon * sum(
+            calc_grid_cell_area(
+                lat, lon_res=resolution, lat_res=resolution
+            )
+            for lat in lat_centers
+        )
+    return area
 
 
 def main():
@@ -50,6 +71,27 @@ def main():
             linestyle=LINESTYLES[index % len(LINESTYLES)],
             label=rf'{ocean}: $k$={k:.2f}',
         )
+
+    # --- Global ocean-area-weighted mean k ----------------------
+    area = {ocean: ocean_area_km2(ocean) for ocean in oceans}
+    total_area = float(sum(area.values()))
+    global_k = sum(
+        record['k'] * area[record['Ocean']]
+        for record in records
+    ) / total_area
+
+    print('\nGlobal ocean-area-weighted mean k: {:.4f}'.format(global_k))
+    for record in records:
+        print(
+            '  {:<4s} k={:.4f}  area={:.6e} km2  weight={:.3%}'.format(
+                record['Ocean'],
+                record['k'],
+                area[record['Ocean']],
+                area[record['Ocean']] / total_area,
+            )
+        )
+    # ------------------------------------------------------------
+
     ax.set(xlim=(0, 60), ylim=(0.15, 0.9), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$')
     ax.xaxis.label.set_size(14)
     ax.yaxis.label.set_size(14)
