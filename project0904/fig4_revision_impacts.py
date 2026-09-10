@@ -121,7 +121,7 @@ def plot_single_ocean(ocean, original, corrected):
     ax.spines["right"].set_visible(False)
     fig.patch.set_alpha(0)
     ax.patch.set_alpha(0)
-    ax.set_title(ocean, fontsize=17, fontweight='bold')
+    ax.set_title(ocean, fontsize=17, fontweight='bold', loc='left')
     ax.axvline(0, color="k", linewidth=0.8)
     fig.tight_layout()
     FIG_DIR.mkdir(exist_ok=True)

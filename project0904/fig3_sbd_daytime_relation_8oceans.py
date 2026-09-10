@@ -3,25 +3,107 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import cot_k_b_to_albedo, cot_to_albedo, mc_fit, oceans
-from utils_solar import calc_grid_cell_area, daytime_latitude_weighted_albedo
+from utils_solar import calc_grid_cell_area, get_daytime_sza
 from util_ocean_season_division import oceans_def
+from scipy.interpolate import RegularGridInterpolator
 
 OUTPUT_PATH = './figs/fig3_sbd_daytime_relation_8oceans.png'
 FITS_CSV_PATH = './processed_data/fig3_sbd_daytime_relation_8oceans_fits.csv'
 COT = np.geomspace(2.5, 60, 80)
-SEASONS = ('MAM', 'JJA', 'SON', 'DJF')
+MONTH_TO_SEASON = {
+    1: 'DJF', 2: 'DJF', 3: 'MAM', 4: 'MAM', 5: 'MAM',
+    6: 'JJA', 7: 'JJA', 8: 'JJA', 9: 'SON', 10: 'SON',
+    11: 'SON', 12: 'DJF',
+}
 TROPICAL_OCEANS = {'TPO', 'TAO', 'TIO'}
 TROPICAL_COLORS = ("#090EA5", "#35f3d0", '#2c7fb8')
 EXTRATROPICAL_COLORS = ("#f1c515", "#8b745e", "#ef7809", "#f93939", "#ec7fe6")
 LINESTYLES = (':', '--', '-')
 
 
-def daytime_ocean_albedo(ocean):
-    seasonal_albedo = [
-        daytime_latitude_weighted_albedo(COT, ocean, season, table_folder='cp')
-        for season in SEASONS
-    ]
-    return np.nanmean(seasonal_albedo, axis=0)
+# SBDART lookup tables live in the parent project
+LUT_BASE = '/home/chenyiqi/251028_albedo_cot/build_sbdart_lookup_table'
+_SBDART_INTERP_CACHE = {}
+
+
+def sbdart_interpolator(ocean, season, table_folder='cp'):
+    """Cached linear interpolator over the (SZA, COT) SBDART albedo table."""
+    key = (ocean, season, table_folder)
+    if key in _SBDART_INTERP_CACHE:
+        return _SBDART_INTERP_CACHE[key]
+
+    path = (
+        f'{LUT_BASE}/cot_sza_to_albedo_lookup_table_{table_folder}/'
+        f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv'
+    )
+    table = pd.read_csv(path, index_col=0)
+    sza_grid = table.index.to_numpy(dtype=float)
+    cot_grid = table.columns.to_numpy(dtype=float)
+    grid = table.to_numpy(dtype=float)
+
+    order_sza = np.argsort(sza_grid)
+    order_cot = np.argsort(cot_grid)
+    interp = RegularGridInterpolator(
+        (sza_grid[order_sza], cot_grid[order_cot]),
+        grid[np.ix_(order_sza, order_cot)],
+        method='linear', bounds_error=False, fill_value=np.nan,
+    )
+    _SBDART_INTERP_CACHE[key] = interp
+    return interp
+
+
+def annual_ocean_albedo(ocean, table_folder='cp', max_sza=70):
+    """
+    Annual-mean daytime & latitude weighted SBDART albedo for one ocean.
+
+    Instead of splitting the year into seasons, every COT value is averaged
+    over every daytime hour of the whole year, with cos(SZA) as the weight
+    (plus cos(latitude) as the ocean-area weight).  Each day uses the
+    SBDART lookup table of its season.
+    """
+    latitudes = np.unique(np.concatenate([
+        np.arange(south + 0.5, north, 1.0)
+        for _, south, _, north in oceans_def[ocean]
+    ]))
+
+    interpolators = {
+        season: sbdart_interpolator(ocean, season, table_folder)
+        for season in ('MAM', 'JJA', 'SON', 'DJF')
+    }
+
+    days = pd.date_range('2021-01-01', '2021-12-31', freq='D')
+
+    numerator = np.zeros_like(COT, dtype=float)
+    denominator = 0.0
+
+    for day in days:
+        season = MONTH_TO_SEASON[day.month]
+        itp = interpolators[season]
+        doy = day.dayofyear
+
+        for latitude in latitudes:
+            sza_values = get_daytime_sza(latitude, doy, max_sza=max_sza)
+            if sza_values.size == 0:
+                continue
+
+            time_weights = np.cos(np.deg2rad(sza_values))
+
+            # evaluate the SBDART table for every daytime hour at once
+            points = np.column_stack([
+                np.repeat(sza_values, COT.size),
+                np.tile(COT, sza_values.size),
+            ])
+            albedo = itp(points).reshape(sza_values.size, COT.size)
+
+            weighted_albedo = (time_weights[:, None] * albedo).sum(axis=0)
+
+            latitude_weight = np.cos(np.deg2rad(latitude))
+            numerator += latitude_weight * weighted_albedo
+            denominator += latitude_weight * np.sum(time_weights)
+
+    if denominator == 0:
+        return np.full_like(COT, np.nan, dtype=float)
+    return numerator / denominator
 
 
 def ocean_area_km2(ocean, resolution=1.0):
@@ -54,7 +136,7 @@ def main():
     records = []
     ratio_by_ocean = {}
     for index, ocean in enumerate(oceans):
-        albedo = daytime_ocean_albedo(ocean)
+        albedo = annual_ocean_albedo(ocean)
         # per-ocean ratio LH74 Ac / daytime Ac averaged over the COT grid
         valid_ratio = albedo > 0
         if valid_ratio.any():
