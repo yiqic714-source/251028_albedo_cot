@@ -237,7 +237,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
     if linear:
         ax.set(title=ocean)
     else:
-        ax.set(xlim=(0, 60), ylim=(0, 0.9), title=ocean)
+        ax.set(xlim=(0, 60), ylim=(0.05, 0.95), title=ocean)
     ax.grid(alpha=0.25)
     ax.tick_params(labelsize=7)
     # Keep SBDART first, followed by RFOV, Grid, and M14.
@@ -261,6 +261,7 @@ def make_figure(l3_data, rfov_data, linear=False):
     layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
     fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
     records = []
+    panel_index = 0
     for row, ocean_row in enumerate(layout):
         for column, ocean in enumerate(ocean_row):
             ax = axes[row, column]
@@ -269,9 +270,9 @@ def make_figure(l3_data, rfov_data, linear=False):
                 continue
             record = draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear)
             records.append(record)
-            panel_index = row * 3 + column
             ax.text(-0.03, 1.01, format_panel_tag(panel_index, 'science'),
                     transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
+            panel_index += 1
             if row == 2:
                 ax.set_xlabel(r'$\ln(\mathrm{COT})$' if linear else 'COT', fontsize=11)
             if column == 0:

@@ -52,8 +52,15 @@ def main():
     tropical_index = 0
     extratropical_index = 0
     records = []
+    ratio_by_ocean = {}
     for index, ocean in enumerate(oceans):
         albedo = daytime_ocean_albedo(ocean)
+        # per-ocean ratio LH74 Ac / daytime Ac averaged over the COT grid
+        valid_ratio = albedo > 0
+        if valid_ratio.any():
+            ratio_by_ocean[ocean] = np.nanmean(albedo[valid_ratio]*(1-albedo[valid_ratio]) / (lh74[valid_ratio]*(1-lh74[valid_ratio])))
+        else:
+            ratio_by_ocean[ocean] = np.nan
         k, lnb, _, _ = mc_fit(
             COT, albedo, cot_std=0.0, albedo_std=0.0,
             calculate_uncertainty=False,
@@ -92,7 +99,24 @@ def main():
         )
     # ------------------------------------------------------------
 
-    ax.set(xlim=(0, 60), ylim=(0.15, 0.9), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$')
+    # --- Global ocean-area-weighted ratio LH74 Ac / daytime Ac --
+    global_ratio = sum(
+        ratio_by_ocean[ocean] * area[ocean]
+        for ocean in oceans
+    ) / total_area
+    print('\nGlobal ocean-area-weighted ratio Ac(1-Ac) daytime / LH74: {:.3f}'.format(global_ratio))
+    for ocean in oceans:
+        print(
+            '  {:<4s} ratio={:.3f}  area={:.6e} km2  weight={:.3%}'.format(
+                ocean,
+                ratio_by_ocean[ocean],
+                area[ocean],
+                area[ocean] / total_area,
+            )
+        )
+    # ------------------------------------------------------------
+
+    ax.set(xlim=(0, 60), ylim=(0.05, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$')
     ax.xaxis.label.set_size(14)
     ax.yaxis.label.set_size(14)
     ax.tick_params(labelsize=8.5)

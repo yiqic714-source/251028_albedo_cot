@@ -22,10 +22,9 @@ from shapely.ops import unary_union
 from matplotlib.colors import Normalize
 from matplotlib.patches import Patch
 import matplotlib.cm as cm
-from matplotlib.gridspec import GridSpec
+from matplotlib.colors import ListedColormap
 
 from utils_fitting import format_panel_tag
-import matplotlib.gridspec as gridspec
 
 # ============================================================
 # Paths
@@ -140,7 +139,6 @@ def plot_irf_difference_map(result, ERF_CO2, ax):
     for _,row in result.iterrows():
         ocean=row["Ocean"]
         values[ocean]=(row["Original"] - row["Corrected"]) / ERF_CO2[ocean]
-
     ax.set_extent([-180,180,-60,60])
     ax.add_feature(
         cfeature.LAND,
@@ -150,15 +148,31 @@ def plot_irf_difference_map(result, ERF_CO2, ax):
         zorder=4,
     )
     ax.coastlines(linewidth=0.4, zorder=5)
-    cmap=cm.viridis
+
+    # ========= 调淡viridis，不使用alpha透明度 =========
+    fade = 0.5   # 0=原版；0.2轻微；0.35中等；0.5很淡，按需修改
+    base_cmap = cm.viridis
+    n_colors = 256
+    raw_rgba = base_cmap(np.linspace(0,1,n_colors))
+    new_rgb = []
+    for r,g,b,a in raw_rgba:
+        # 向白色偏移实现变淡，alpha保持1.0完全不透明
+        rn = r + (1.0 - r)*fade
+        gn = g + (1.0 - g)*fade
+        bn = b + (1.0 - b)*fade
+        new_rgb.append((rn, gn, bn, 1.0))
+    light_viridis = ListedColormap(new_rgb)
+    # =================================================
+
     norm=Normalize(vmin=0, vmax=max(values.values()))
 
     for ocean,regions in OCEANS_MAP.items():
         geom=region_geometry(regions)
+        rgba = light_viridis(norm(values[ocean]))
         ax.add_geometries(
             [geom],
             ccrs.PlateCarree(),
-            facecolor=cmap(norm(values[ocean])),
+            facecolor=rgba,
             edgecolor="black",
             linewidth=0.4,
             zorder=3
@@ -167,9 +181,9 @@ def plot_irf_difference_map(result, ERF_CO2, ax):
     gl.top_labels = False
     gl.right_labels = False
 
-    sm=cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm=cm.ScalarMappable(norm=norm, cmap=light_viridis)
     cbar=plt.colorbar(sm, ax=ax, orientation="vertical", shrink=0.7)
-    cbar.set_label(r'$\Delta$IRF$_{\mathrm{aci}}$/ERF$_{\mathrm{CO2}}$')
+    cbar.set_label(r'$\Delta$IRF$_{\mathrm{aci}}$ / ERF$_{\mathrm{CO2}}$')
 
 # ============================================================
 # New: Vertical dumbbell plot
@@ -179,8 +193,8 @@ def plot_dumbbell_vertical(ax):
     labels = ["Q08", "B13", "M14", "Mc17", "G17", "R18", "H19", "T19", "D20", "J21"]
     old_vals = np.array([-0.2, -0.6, -0.34, -1.0, -0.4, -0.8, -1.14, -0.52, -0.69, -0.59])
     new_vals = old_vals.copy()
-    new_vals[[4,6,7, 8]] = new_vals[[4,6,7, 8]] * 0.653
-    new_vals[3] = new_vals[3] * 0.63
+    new_vals[[4,6,7,8]] = new_vals[[4,6,7,8]] * 0.653
+    new_vals[3] = new_vals[3] * 0.653 * 1.265
 
     x_pos = np.arange(len(labels))
 
@@ -194,6 +208,14 @@ def plot_dumbbell_vertical(ax):
                color="#1f77b4", alpha=0.13, zorder=1)
     ax.axhspan(mean_a - sd_a, mean_a + sd_a,
                color="#d62728", alpha=0.13, zorder=1)
+
+    # mean lines (dashed) for before / after revision
+    line_b = ax.axhline(mean_b, color="#1f77b4", linestyle="--", lw=1.5,
+                        label=rf"Mean$_{{\mathrm{{before}}}}$ = {mean_b:.2f}",
+                        zorder=3)
+    line_a = ax.axhline(mean_a, color="#d62728", linestyle="--", lw=1.5,
+                        label=rf"Mean$_{{\mathrm{{after}}}}$ = {mean_a:.2f}",
+                        zorder=3)
 
     # draw vertical connecting lines
     for xi, yo, yn in zip(x_pos, old_vals, new_vals):
@@ -209,10 +231,12 @@ def plot_dumbbell_vertical(ax):
         handles=[
             h_before,
             h_after,
+            line_b,
+            line_a,
             Patch(facecolor="#1f77b4", alpha=0.13, edgecolor="none",
-                  label=rf"$\pm1\sigma_{{\mathrm{{Before}}}}$ = $\pm${sd_b:.2f}"),
+                  label=rf"$\pm1\sigma_{{\mathrm{{before}}}}$ = $\pm${sd_b:.2f}"),
             Patch(facecolor="#d62728", alpha=0.13, edgecolor="none",
-                  label=rf"$\pm1\sigma_{{\mathrm{{After}}}}$ = $\pm${sd_a:.2f}"),
+                  label=rf"$\pm1\sigma_{{\mathrm{{after}}}}$ = $\pm${sd_a:.2f}"),
         ],
         loc="center left",
         bbox_to_anchor=(1.02, 0.5),
@@ -247,10 +271,21 @@ def main():
     plot_dumbbell_vertical(ax_b)
 
     # panel identifiers a / b via format_panel_tag
-    ax_a.text(-0.02, 1.08, format_panel_tag(0, "nature"),
+    ax_a.text(-0.02, 1.08, format_panel_tag(0, "science"),
               transform=ax_a.transAxes, fontsize=16, va="top")
-    ax_b.text(-0.02, 1.17, format_panel_tag(1, "nature"),
+    ax_b.text(-0.02, 1.23, format_panel_tag(1, "science"),
               transform=ax_b.transAxes, fontsize=16, va="top")
+
+    # --- area-weighted global mean of the mapped fill field (top-right of A) ---
+    areas = result.set_index("Ocean")["Area"]
+    map_vals = {
+        row.Ocean: (row.Original - row.Corrected) / erf_co2[row.Ocean]
+        for _, row in result.iterrows()
+    }
+    gmean = sum(map_vals[o] * areas[o] for o in areas.index) / areas.sum()
+    ax_a.text(0.99, 1.06,
+              rf"Global area-weighted mean = {gmean:.3f}",
+              transform=ax_a.transAxes, ha="right", va="top", fontsize=11)
 
     FIG_DIR.mkdir(exist_ok=True)
     fig.savefig(FIG_DIR / "fig4_composite_ab.png", dpi=300, bbox_inches="tight")

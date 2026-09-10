@@ -119,12 +119,12 @@ def draw_global(ax, data):
 
     fit_and_plot(ax, data, 'visible', 'SBDART Reproduce', COLORS['visible'], edges)
     fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
-    fit_and_plot(ax, data, 'surface', r'+ real $A_{\mathrm{sfc}}$', COLORS['surface'], edges, linestyle='--')
-    fit_and_plot(ax, data, 'gas', '+ real Gas', COLORS['gas'], edges)
+    fit_and_plot(ax, data, 'surface', r'+ Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges, linestyle='--')
+    fit_and_plot(ax, data, 'gas', '+ Real Gas', COLORS['gas'], edges)
     fit_and_plot(ax, data, 'sza', r'+ SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
 
     ax.set(
-        xlim=(0, 60), ylim=(0.15, 0.9), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$'
+        xlim=(0, 60), ylim=(0.05, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$'
     )
     ax.xaxis.label.set_size(14)
     ax.yaxis.label.set_size(14)
