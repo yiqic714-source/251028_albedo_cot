@@ -193,8 +193,8 @@ def plot_dumbbell_vertical(ax):
     labels = ["Q08", "B13", "M14", "Mc17", "G17", "R18", "H19", "T19", "D20", "J21"]
     old_vals = np.array([-0.2, -0.6, -0.34, -1.0, -0.4, -0.8, -1.14, -0.52, -0.69, -0.59])
     new_vals = old_vals.copy()
-    new_vals[[4,6,7,8]] = new_vals[[4,6,7,8]] * 0.653
-    new_vals[3] = new_vals[3] * 0.653 * 1.265
+    new_vals[[4,6,7,8]] = new_vals[[4,6,7,8]] * 0.664
+    new_vals[3] = new_vals[3] * 0.664 * 1.261
 
     x_pos = np.arange(len(labels))
 
@@ -276,16 +276,29 @@ def main():
     ax_b.text(-0.02, 1.23, format_panel_tag(1, "science"),
               transform=ax_b.transAxes, fontsize=16, va="top")
 
-    # --- area-weighted global mean of the mapped fill field (top-right of A) ---
+    # --- global area-weighted means (printed in terminal, not annotated) ---
     areas = result.set_index("Ocean")["Area"]
-    map_vals = {
-        row.Ocean: (row.Original - row.Corrected) / erf_co2[row.Ocean]
+    total_area = areas.sum()
+    original_awm = sum(
+        row.Original * areas[row.Ocean]
         for _, row in result.iterrows()
-    }
-    gmean = sum(map_vals[o] * areas[o] for o in areas.index) / areas.sum()
-    ax_a.text(0.99, 1.06,
-              rf"Global area-weighted mean = {gmean:.3f}",
-              transform=ax_a.transAxes, ha="right", va="top", fontsize=11)
+    ) / total_area
+    corrected_awm = sum(
+        row.Corrected * areas[row.Ocean]
+        for _, row in result.iterrows()
+    ) / total_area
+    delta_awm = sum(
+        (row.Original - row.Corrected) * areas[row.Ocean]
+        for _, row in result.iterrows()
+    ) / total_area
+    ratio_awm = sum(
+        (row.Original - row.Corrected) / erf_co2[row.Ocean] * areas[row.Ocean]
+        for _, row in result.iterrows()
+    ) / total_area
+    print(f"\nGlobal area-weighted mean of original  IRFaci (before revision) : {original_awm:.4f} W m-2")
+    print(f"Global area-weighted mean of corrected IRFaci (after revision)  : {corrected_awm:.4f} W m-2")
+    print(f"Global area-weighted mean of delta_IRFaci                       : {delta_awm:.4f} W m-2")
+    print(f"Global area-weighted mean of delta_IRFaci/ERF_CO2               : {ratio_awm:.4f}")
 
     FIG_DIR.mkdir(exist_ok=True)
     fig.savefig(FIG_DIR / "fig4_composite_ab.png", dpi=300, bbox_inches="tight")

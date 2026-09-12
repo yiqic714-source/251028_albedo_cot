@@ -128,8 +128,10 @@ def ocean_area_km2(ocean, resolution=1.0):
 
 def main():
     fig, ax = plt.subplots(figsize=(5, 4.1))
-    lh74 = cot_to_albedo(COT, 'l74')
-    ax.plot(COT, lh74, color='#222222', lw=1.8, label=r'LH74: $k$=1.00')
+    analy = cot_to_albedo(COT, 'analy', miu=3**(-0.5))
+    ax.plot(COT, analy, color='k', lw=1.8, label=r'Ana, $\mu=3^{-1/2}: k=1$')
+    analy = cot_to_albedo(COT, 'analy', miu=1)
+    ax.plot(COT, analy, color='k', lw=1.8, ls='--', label=r'Ana, $\mu=1: k=1$')
 
     tropical_index = 0
     extratropical_index = 0
@@ -140,7 +142,7 @@ def main():
         # per-ocean ratio LH74 Ac / daytime Ac averaged over the COT grid
         valid_ratio = albedo > 0
         if valid_ratio.any():
-            ratio_by_ocean[ocean] = np.nanmean(albedo[valid_ratio]*(1-albedo[valid_ratio]) / (lh74[valid_ratio]*(1-lh74[valid_ratio])))
+            ratio_by_ocean[ocean] = np.nanmean(albedo[valid_ratio]*(1-albedo[valid_ratio]) / (analy[valid_ratio]*(1-analy[valid_ratio])))
         else:
             ratio_by_ocean[ocean] = np.nan
         k, lnb, _, _ = mc_fit(
@@ -198,7 +200,7 @@ def main():
         )
     # ------------------------------------------------------------
 
-    ax.set(xlim=(0, 60), ylim=(0.05, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$')
+    ax.set(xlim=(0, 60), ylim=(0.1, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$')
     ax.xaxis.label.set_size(14)
     ax.yaxis.label.set_size(14)
     ax.tick_params(labelsize=8.5)

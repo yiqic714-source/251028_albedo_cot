@@ -25,7 +25,7 @@ MIN_CF = 0.1
 COT_EDGES = np.geomspace(MIN_COT, 76, 17)
 COT_FIT = np.geomspace(MIN_COT, 60, 300)
 
-LH74_COLOR = '#222222'
+ANALY_COLOR = '#222222'
 SBD_COLOR = '#574cff'
 RFOV_COLOR = '#00bfff'
 GRID_COLOR = '#f20d38'
@@ -147,120 +147,122 @@ def logit_yerr(albedo, std):
 def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
     l3 = l3_data[l3_data['ocean'] == ocean]
     rfov = add_sbdart_albedo(rfov_data[rfov_data['ocean'] == ocean])
-    plotted = {}
-    k_m14 = b_m14 = k_m14_unc = lnb_m14_unc = np.nan
 
-    # LH74 theoretical relation.
-    lh74 = cot_to_albedo(COT_FIT, 'l74')
-    plotted['LH74'] = (LH74_COLOR, r'LH74: $k$=1.00')
+    k_rfov = k_sbd = k_grid = np.nan
+
+    # ANALY theoretical relation.
+    analy_miu13 = cot_to_albedo(COT_FIT, 'analy', miu=3**(-0.5))
+    analy = cot_to_albedo(COT_FIT, 'analy', miu=1)
     if linear:
-        ax.plot(cot_to_x(COT_FIT), albedo_to_y(lh74), color=LH74_COLOR, lw=1.5)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy_miu13), color=ANALY_COLOR, lw=1.5,
+                label=r'Ana, $\mu=3^{-1/2}$: $k$=1')
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy), color=ANALY_COLOR, lw=1.5, ls='--',
+                label=r'Ana, $\mu$=1: $k$=1')
     else:
-        ax.plot(COT_FIT, lh74, color=LH74_COLOR, lw=1.5)
+        ax.plot(COT_FIT, analy_miu13, color=ANALY_COLOR, lw=1.5,
+                label=r'Ana, $\mu=3^{-1/2}$: $k$=1')
+        ax.plot(COT_FIT, analy, color=ANALY_COLOR, lw=1.5, ls='--',
+                label=r'Ana, $\mu$=1: $k$=1')
 
-    if len(rfov) >= 5:
-        rfov_cot, rfov_albedo, rfov_std = bin_data(
-            rfov, 'cot_rfov', 'ret_albedo'
-        )
-        k_rfov, b_rfov = fit_line(rfov_cot, rfov_albedo, 0.10, 0.20)
-        plotted['RFOV'] = (RFOV_COLOR, rf'RFOV: $k$={k_rfov:.2f}')
-        rfov_fit = cot_k_b_to_albedo(COT_FIT, k_rfov, np.exp(b_rfov))
-        if linear:
-            ax.errorbar(cot_to_x(rfov_cot), albedo_to_y(rfov_albedo),
-                        yerr=logit_yerr(rfov_albedo, rfov_std), color=RFOV_COLOR,
-                        fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(cot_to_x(COT_FIT), albedo_to_y(rfov_fit), color=RFOV_COLOR, lw=1.5)
-        else:
-            ax.errorbar(rfov_cot, rfov_albedo, yerr=rfov_std, color=RFOV_COLOR,
-                        fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(COT_FIT, rfov_fit, color=RFOV_COLOR, lw=1.5)
+    sbd_cot, sbd_albedo, sbd_std = bin_data(
+        rfov, 'cot_rfov', 'sbd_albedo'
+    )
+    k_sbd, b_sbd = fit_line(sbd_cot, sbd_albedo, 0.0, 0.03)
+    sbd_fit = cot_k_b_to_albedo(COT_FIT, k_sbd, np.exp(b_sbd))
+    if linear:
+        ax.errorbar(cot_to_x(sbd_cot), albedo_to_y(sbd_albedo),
+                    yerr=logit_yerr(sbd_albedo, sbd_std), color=SBD_COLOR,
+                    fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(sbd_fit), color=SBD_COLOR, lw=1.5,
+                label=rf'SBD: $k$={k_sbd:.2f}')
+    else:
+        ax.errorbar(sbd_cot, sbd_albedo, yerr=sbd_std, color=SBD_COLOR,
+                    fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(COT_FIT, sbd_fit, color=SBD_COLOR, lw=1.5,
+                label=rf'SBD: $k$={k_sbd:.2f}')
 
-        sbd_cot, sbd_albedo, sbd_std = bin_data(
-            rfov, 'cot_rfov', 'sbd_albedo'
-        )
-        k_sbd, b_sbd = fit_line(sbd_cot, sbd_albedo, 0.0, 0.03)
-        plotted['SBDART'] = (SBD_COLOR, rf'SBDART: $k$={k_sbd:.2f}')
-        sbd_fit = cot_k_b_to_albedo(COT_FIT, k_sbd, np.exp(b_sbd))
-        if linear:
-            ax.errorbar(cot_to_x(sbd_cot), albedo_to_y(sbd_albedo),
-                        yerr=logit_yerr(sbd_albedo, sbd_std), color=SBD_COLOR,
-                        fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(cot_to_x(COT_FIT), albedo_to_y(sbd_fit), color=SBD_COLOR, lw=1.5)
-        else:
-            ax.errorbar(sbd_cot, sbd_albedo, yerr=sbd_std, color=SBD_COLOR,
-                        fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(COT_FIT, sbd_fit, color=SBD_COLOR, lw=1.5)
+    rfov_cot, rfov_albedo, rfov_std = bin_data(
+        rfov, 'cot_rfov', 'ret_albedo'
+    )
+    k_rfov, b_rfov = fit_line(rfov_cot, rfov_albedo, 0.10, 0.20)
+    rfov_fit = cot_k_b_to_albedo(COT_FIT, k_rfov, np.exp(b_rfov))
+    if linear:
+        ax.errorbar(cot_to_x(rfov_cot), albedo_to_y(rfov_albedo),
+                    yerr=logit_yerr(rfov_albedo, rfov_std), color=RFOV_COLOR,
+                    fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(rfov_fit), color=RFOV_COLOR, lw=1.5,
+                label=rf'RFOV: $k$={k_rfov:.2f}')
+    else:
+        ax.errorbar(rfov_cot, rfov_albedo, yerr=rfov_std, color=RFOV_COLOR,
+                    fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(COT_FIT, rfov_fit, color=RFOV_COLOR, lw=1.5,
+                label=rf'RFOV: $k$={k_rfov:.2f}')
 
-    if len(l3) >= 5:
-        grid_cot, grid_albedo, grid_std = bin_data(l3, 'cot', 'albedo')
-        k_grid, b_grid = fit_line(grid_cot, grid_albedo, 0.10, 0.20)
-        plotted['Grid'] = (GRID_COLOR, rf'Grid: $k$={k_grid:.2f}')
-        grid_fit = cot_k_b_to_albedo(COT_FIT, k_grid, np.exp(b_grid))
-        if linear:
-            ax.errorbar(cot_to_x(grid_cot), albedo_to_y(grid_albedo),
-                        yerr=logit_yerr(grid_albedo, grid_std), color=GRID_COLOR,
-                        fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(cot_to_x(COT_FIT), albedo_to_y(grid_fit), color=GRID_COLOR, lw=1.5)
-        else:
-            ax.errorbar(grid_cot, grid_albedo, yerr=grid_std, color=GRID_COLOR,
-                        fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.5)
+    grid_cot, grid_albedo, grid_std = bin_data(l3, 'cot', 'albedo')
+    k_grid, b_grid = fit_line(grid_cot, grid_albedo, 0.10, 0.20)
+    grid_fit = cot_k_b_to_albedo(COT_FIT, k_grid, np.exp(b_grid))
+    if linear:
+        ax.errorbar(cot_to_x(grid_cot), albedo_to_y(grid_albedo),
+                    yerr=logit_yerr(grid_albedo, grid_std), color=GRID_COLOR,
+                    fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(grid_fit), color=GRID_COLOR, lw=1.5,
+                label=rf'Grid: $k$={k_grid:.2f}')
+    else:
+        ax.errorbar(grid_cot, grid_albedo, yerr=grid_std, color=GRID_COLOR,
+                    fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.5,
+                label=rf'Grid: $k$={k_grid:.2f}')
 
-    # M14 uses the same Grid rows, binning, error bars, and fit workflow.
-    if len(l3) >= 5:
-        a3, a4, a6 = M14_PARAMS[ocean]
-        m14_data = l3.copy()
-        m14_data['m14_albedo'] = (
-            a3 + a4 * m14_data['cf_ceres'].to_numpy() *
-            m14_data['cot'].to_numpy()
-        ) ** a6
-        m14_cot, m14_albedo, m14_std = bin_data(
-            m14_data, 'cot', 'm14_albedo'
-        )
-        k_m14, b_m14, k_m14_unc, lnb_m14_unc = mc_fit(
-            m14_cot, m14_albedo,
-            cot_std=0.10, albedo_std=0.20,
-            n_mc=300, bootstrap=True,
-        )
-        plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
-        m14_fit = cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14))
-        if linear:
-            ax.errorbar(cot_to_x(m14_cot), albedo_to_y(m14_albedo),
-                        yerr=logit_yerr(m14_albedo, m14_std), color=M14_COLOR,
-                        fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(cot_to_x(COT_FIT), albedo_to_y(m14_fit), color=M14_COLOR, lw=1.5)
-        else:
-            ax.errorbar(m14_cot, m14_albedo, yerr=m14_std, color=M14_COLOR,
-                        fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
-            ax.plot(COT_FIT, m14_fit, color=M14_COLOR, lw=1.5)
+    # # M14 uses the same Grid rows, binning, error bars, and fit workflow.
+    # if len(l3) >= 5:
+    #     a3, a4, a6 = M14_PARAMS[ocean]
+    #     m14_data = l3.copy()
+    #     m14_data['m14_albedo'] = (
+    #         a3 + a4 * m14_data['cf_ceres'].to_numpy() *
+    #         m14_data['cot'].to_numpy()
+    #     ) ** a6
+    #     m14_cot, m14_albedo, m14_std = bin_data(
+    #         m14_data, 'cot', 'm14_albedo'
+    #     )
+    #     k_m14, b_m14, k_m14_unc, lnb_m14_unc = mc_fit(
+    #         m14_cot, m14_albedo,
+    #         cot_std=0.10, albedo_std=0.20,
+    #         n_mc=300, bootstrap=True,
+    #     )
+    #     plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
+    #     m14_fit = cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14))
+    #     if linear:
+    #         ax.errorbar(cot_to_x(m14_cot), albedo_to_y(m14_albedo),
+    #                     yerr=logit_yerr(m14_albedo, m14_std), color=M14_COLOR,
+    #                     fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
+    #         ax.plot(cot_to_x(COT_FIT), albedo_to_y(m14_fit), color=M14_COLOR, lw=1.5)
+    #     else:
+    #         ax.errorbar(m14_cot, m14_albedo, yerr=m14_std, color=M14_COLOR,
+    #                     fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
+    #         ax.plot(COT_FIT, m14_fit, color=M14_COLOR, lw=1.5)
 
     if linear:
         ax.set(title=ocean)
     else:
-        ax.set(xlim=(0, 60), ylim=(0.05, 0.95), title=ocean)
+        ax.set(xlim=(0, 60), ylim=(0.1, 0.95), title=ocean)
     ax.grid(alpha=0.25)
     ax.tick_params(labelsize=7)
-    # Keep SBDART first, followed by RFOV, Grid, and M14.
-    legend_order = ['LH74', 'SBDART', 'RFOV', 'Grid', 'M14']
-    handles = [
-        plt.Line2D([0], [0], color=plotted[name][0], lw=1.8,
-                   label=plotted[name][1])
-        for name in legend_order if name in plotted
-    ]
-    ax.legend(handles=handles, loc='lower right', fontsize=6.5, framealpha=0.8)
-    return {
-        'Ocean': ocean,
-        'k_m14': k_m14,
-        'lnb_m14': b_m14,
-        'k_m14_unc': k_m14_unc,
-        'lnb_m14_unc': lnb_m14_unc,
-    }
+    ax.legend(loc='lower right', fontsize=6.5, framealpha=0.65)
+
+    if not linear:
+        print(
+            f'{ocean}: k_sbd={k_sbd:.4f}  k_rfov={k_rfov:.4f}  k_grid={k_grid:.4f}  '
+            f'err(k_sbd vs k_rfov)={k_sbd - k_rfov:+.4f} '
+            f'({(k_sbd - k_rfov) / k_rfov * 100:+.2f}%)  '
+            f'err(k_sbd vs k_grid)={k_sbd - k_grid:+.4f} '
+            f'({(k_sbd - k_grid) / k_grid * 100:+.2f}%)'
+        )
+    return
 
 
 def make_figure(l3_data, rfov_data, linear=False):
     layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
     fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
-    records = []
     panel_index = 0
     for row, ocean_row in enumerate(layout):
         for column, ocean in enumerate(ocean_row):
@@ -268,8 +270,7 @@ def make_figure(l3_data, rfov_data, linear=False):
             if ocean is None:
                 ax.axis('off')
                 continue
-            record = draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear)
-            records.append(record)
+            draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear)
             ax.text(-0.03, 1.01, format_panel_tag(panel_index, 'science'),
                     transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
             panel_index += 1
@@ -281,17 +282,15 @@ def make_figure(l3_data, rfov_data, linear=False):
     output_path = LINEAR_OUTPUT_PATH if linear else OUTPUT_PATH
     fig.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
-    return records, output_path
+    return output_path
 
 
 def main():
     l3_data = load_l3_data()
     rfov_data = load_rfov_data()
-    records, output_path = make_figure(l3_data, rfov_data)
+    output_path = make_figure(l3_data, rfov_data)
     FIG_DIR.mkdir(exist_ok=True)
-    SENSITIVITY_CSV_PATH.parent.mkdir(exist_ok=True)
-    pd.DataFrame(records).sort_values('Ocean').to_csv(SENSITIVITY_CSV_PATH, index=False)
-    _, linear_output_path = make_figure(l3_data, rfov_data, linear=True)
+    linear_output_path = make_figure(l3_data, rfov_data, linear=True)
     print(f'Saved: {output_path}')
     print(f'Saved: {linear_output_path}')
 

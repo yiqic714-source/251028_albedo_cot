@@ -9,6 +9,7 @@ import os
 import numpy as np
 import pandas as pd
 from scipy import odr, stats
+from scipy.optimize import least_squares
 from scipy.interpolate import griddata
 
 np.random.seed(0)
@@ -111,7 +112,34 @@ def _fit_odr_once(x, y, sx, sy, beta0=None):
     return out.beta[0], out.beta[1]
 
 
-def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42, calculate_uncertainty=True):
+def _fit_lstsq_once(x, y, sx, sy, beta0=None):
+    """Weighted least-squares fit of y = k*x + b (weights 1/sy).
+
+    sx is accepted for interface parity with the ODR fitter but is not used,
+    because an ordinary (weighted) least-squares fit minimises the residuals
+    of y only.
+    """
+    x = np.asarray(x, dtype=float).ravel()
+    y = np.asarray(y, dtype=float).ravel()
+    sy = np.asarray(sy, dtype=float).ravel()
+
+    if x.size < 2:
+        raise ValueError("At least 2 points are required.")
+
+    weights = np.where(np.isfinite(sy) & (sy > 0), 1.0 / sy, 1.0)
+
+    if beta0 is None:
+        k0, b0 = np.polyfit(x, y, 1)
+        beta0 = [k0, b0]
+
+    def residual(beta):
+        return weights * (_linear_func(beta, x) - y)
+
+    out = least_squares(residual, np.asarray(beta0, dtype=float))
+    return out.x[0], out.x[1]
+
+
+def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, random_seed=42, calculate_uncertainty=True, method='least_squares'):
     cot = np.asarray(cot, dtype=float).ravel()
     albedo = np.asarray(albedo, dtype=float).ravel()
 
@@ -137,8 +165,15 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
 
     x, y, sx, sy = _raw_to_fit_arrays(cot, albedo, cot_sigma, albedo_sigma)
 
+    if method == 'odr':
+        fitter = _fit_odr_once
+    elif method == 'least_squares':
+        fitter = _fit_lstsq_once
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
     try:
-        k_best, b_best = _fit_odr_once(x, y, sx, sy)
+        k_best, b_best = fitter(x, y, sx, sy)
     except Exception:
         try:
             lr = stats.linregress(x, y)
@@ -181,7 +216,7 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
         )
 
         try:
-            ki, bi = _fit_odr_once(x_i, y_i, sx_i, sy_i, beta0=[k_best, b_best])
+            ki, bi = fitter(x_i, y_i, sx_i, sy_i, beta0=[k_best, b_best])
         except Exception:
             try:
                 lr = stats.linregress(x_i, y_i)
@@ -211,7 +246,7 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
 # SBDART lookup table interpolation
 # ============================================================
 
-def cot_to_albedo(cot, method, sza=None, table_folder='dcp', ocean=None, season=None):
+def cot_to_albedo(cot, method, miu=None, sza=None, table_folder='dcp', ocean=None, season=None):
     """
     Compute cloud albedo from COT using various methods.
 
@@ -220,7 +255,7 @@ def cot_to_albedo(cot, method, sza=None, table_folder='dcp', ocean=None, season=
     cot : array-like
         Cloud optical thickness.
     method : str
-        'sbdart', 'l74', 'quadrature', or 'eddington'.
+        'sbdart', 'analy'.
     sza : float or array-like, optional
         Solar zenith angle in degrees. Required for 'sbdart', 'quadrature', 'eddington'.
     table_folder : str, optional
@@ -283,25 +318,10 @@ def cot_to_albedo(cot, method, sza=None, table_folder='dcp', ocean=None, season=
 
         return albedo.reshape(cot_arr.shape)
 
-    if method == 'l74':
+    if method == 'analy':
         g = 0.85
-        b = 1 - g
+        b = (1 - g) / 2 / miu
         return b * cot / (1 + b * cot)
-
-    if method == 'quadrature':
-        g = 0.85
-        mu = np.cos(np.radians(sza))
-        b = np.sqrt(3) / 2 * (1 - g)
-        return (
-            b * cot + (1 / 2 - np.sqrt(3) / 2 * mu) * (1 - np.exp(-cot / mu))
-        ) / (1 + b * cot)
-
-    if method == 'eddington':
-        g = 0.85
-        mu = np.cos(np.radians(sza))
-        return (
-            (1 - g) * cot + (2 / 3 - mu) * (1 - np.exp(-cot / mu))
-        ) / (4 / 3 + (1 - g) * cot)
 
     raise ValueError(f'Unsupported method: {method}')
 
