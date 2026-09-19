@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import (
-    cot_to_albedo, cot_to_x, mc_fit,
+    cot_to_albedo, cot_to_x, mc_fit, format_panel_tag,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -18,8 +18,8 @@ COLORS = {
     'visible': '#606581',
     'sza': "#3AE102",
     'shortwave': "#157B59",
-    'surface': "#FF02F2",
-    'gas': '#574cff',
+    'gas': "#FF02F2",
+    'surface': '#574cff',
 }
 
 
@@ -98,8 +98,7 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, linestyle='-', linew
     )
 
 
-def draw_global(ax, data):
-    edges = np.geomspace(MIN_COT, 76, 17)
+def prepare_data(data):
     data = data.copy()
     data['visible'] = calculate_sbdart(data, 'dcp_0p4to0p7', 0)
     # extra reference: SBDART visible at the diffuse SZA theta = arccos(1/sqrt(3))
@@ -108,23 +107,36 @@ def draw_global(ax, data):
     )
     data['sza'] = calculate_sbdart(data, 'dcp_0p4to0p7', 'per_point')
     data['shortwave'] = calculate_sbdart(data, 'dcp', 'per_point')
-    data['surface'] = calculate_sbdart(data, 'gasdcp_surcp', 'per_point')
-    data['gas'] = calculate_sbdart(data, 'cp', 'per_point')
+    data['gas'] = calculate_sbdart(data, 'surdcp_gascp', 'per_point')
+    data['surface'] = calculate_sbdart(data, 'cp', 'per_point')
+    return data
 
+
+def draw_global(ax, data, curves):
+    """Plot the requested subset of curves (order: analy_mu13, analy,
+    visible_mu13, visible, sza, shortwave, surface, gas)."""
+    edges = np.geomspace(MIN_COT, 76, 17)
     cot_fit = np.geomspace(MIN_COT, 76, 200)
-    analy_albedo_mu13 = cot_to_albedo(cot_fit, 'analy', miu=3 ** (-0.5))
-    ax.plot(cot_fit, analy_albedo_mu13, color='k', lw=1.8,
-            label=r'Analytical, $\mu=3^{-1/2}$: $k$=1.00')
-    analy_albedo = cot_to_albedo(cot_fit, 'analy', miu=1)
-    ax.plot(cot_fit, analy_albedo, color='k', ls='--', lw=1.8,
-            label=r'Analytical, $\mu=1$: $k$=1.00')
 
-    fit_and_plot(ax, data, 'visible_mu13', r'SBD-Reproduce, $\mu=3^{-1/2}$', '0.5', edges)
-    fit_and_plot(ax, data, 'visible', r'SBD-Reproduce, $\mu=1$', COLORS['visible'], edges, linestyle='--')
-    fit_and_plot(ax, data, 'sza', r'+ SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
-    fit_and_plot(ax, data, 'shortwave', 'To Shortwave', COLORS['shortwave'], edges)
-    fit_and_plot(ax, data, 'surface', r'+ Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges, linestyle=':', linewidth=2.4)
-    fit_and_plot(ax, data, 'gas', '+ Real Gas', COLORS['gas'], edges)
+    if 'analy_mu13' in curves:
+        ax.plot(cot_fit, cot_to_albedo(cot_fit, 'analy', miu=3 ** (-0.5)),
+                color='k', lw=1.8, label=r'Analytical (54.74°): $k$=1.00')
+    if 'visible_mu13' in curves:
+        fit_and_plot(ax, data, 'visible_mu13', r'SBD-Reproduce (54.74°)', '0.5', edges)
+    if 'analy' in curves:
+        ax.plot(cot_fit, cot_to_albedo(cot_fit, 'analy', miu=1),
+                color='k', ls='--', lw=1.8, label=r'Analytical (0°): $k$=1.00')
+    if 'visible' in curves:
+        fit_and_plot(ax, data, 'visible', r'SBD-Reproduce (0°)', COLORS['visible'],
+                     edges, linestyle='--')
+    if 'sza' in curves:
+        fit_and_plot(ax, data, 'sza', r'Real SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
+    if 'shortwave' in curves:
+        fit_and_plot(ax, data, 'shortwave', 'Shortwave Ranged', COLORS['shortwave'], edges)
+    if 'gas' in curves:
+        fit_and_plot(ax, data, 'gas', 'Real Gas', COLORS['gas'], edges)
+    if 'surface' in curves:
+        fit_and_plot(ax, data, 'surface', r'Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges)
 
     ax.set(
         xlim=(0, 60), ylim=(0.1, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$'
@@ -137,9 +149,23 @@ def draw_global(ax, data):
 
 
 def main():
-    data = load_rfov()
-    fig, ax = plt.subplots(figsize=(5, 4.1))
-    draw_global(ax, data)
+    data = prepare_data(load_rfov())
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(8, 4.1))
+    # lines 1-5 in panel a; lines 5-8 in panel b (line 5 = sza in both)
+    draw_global(
+        ax_a, data,
+        ('analy_mu13', 'analy', 'visible_mu13', 'visible', 'sza'),
+    )
+    draw_global(
+        ax_b, data,
+        ('sza', 'shortwave', 'surface', 'gas'),
+    )
+
+    ax_a.text(-0.03, 1.02, format_panel_tag(0, 'science'),
+              transform=ax_a.transAxes, fontsize=14, va='bottom', ha='left')
+    ax_b.text(-0.03, 1.02, format_panel_tag(1, 'science'),
+              transform=ax_b.transAxes, fontsize=14, va='bottom', ha='left')
+
     fig.tight_layout()
     output_path = BASE_DIR / 'figs' / 'fig2_sbd_relation_formation_global.png'
     output_path.parent.mkdir(exist_ok=True)

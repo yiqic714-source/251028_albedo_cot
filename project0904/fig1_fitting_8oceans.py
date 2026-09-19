@@ -20,7 +20,7 @@ FIG_DIR = BASE_DIR / 'figs'
 OUTPUT_PATH = FIG_DIR / 'fig1_fittings_ocean.png'
 LINEAR_OUTPUT_PATH = FIG_DIR / 'figsupp_fittings_ocean_linear.png'
 SENSITIVITY_CSV_PATH = BASE_DIR / 'processed_data' / 'sensitivity_albedo_vs_cot_ocean.csv'
-MIN_COT = 2.5
+MIN_COT = 3
 MIN_CF = 0.1
 COT_EDGES = np.geomspace(MIN_COT, 76, 17)
 COT_FIT = np.geomspace(MIN_COT, 60, 300)
@@ -257,20 +257,26 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
             f'err(k_sbd vs k_grid)={k_sbd - k_grid:+.4f} '
             f'({(k_sbd - k_grid) / k_grid * 100:+.2f}%)'
         )
-    return
+    return {
+        'err_rfov': k_sbd - k_rfov,
+        'err_rfov_pct': (k_sbd - k_rfov) / k_rfov * 100,
+        'err_grid': k_sbd - k_grid,
+        'err_grid_pct': (k_sbd - k_grid) / k_grid * 100,
+    }
 
 
 def make_figure(l3_data, rfov_data, linear=False):
     layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
     fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
     panel_index = 0
+    errors = []
     for row, ocean_row in enumerate(layout):
         for column, ocean in enumerate(ocean_row):
             ax = axes[row, column]
             if ocean is None:
                 ax.axis('off')
                 continue
-            draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear)
+            errors.append(draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear))
             ax.text(-0.03, 1.01, format_panel_tag(panel_index, 'science'),
                     transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
             panel_index += 1
@@ -282,6 +288,17 @@ def make_figure(l3_data, rfov_data, linear=False):
     output_path = LINEAR_OUTPUT_PATH if linear else OUTPUT_PATH
     fig.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
+
+    if not linear:
+        mean_err_rfov = np.nanmean([e['err_rfov'] for e in errors])
+        mean_err_grid = np.nanmean([e['err_grid'] for e in errors])
+        mean_err_rfov_pct = np.nanmean([e['err_rfov_pct'] for e in errors])
+        mean_err_grid_pct = np.nanmean([e['err_grid_pct'] for e in errors])
+        print(f'\nMean err(k_sbd vs k_rfov) = {mean_err_rfov:+.4f} '
+              f'({mean_err_rfov_pct:+.2f}%)')
+        print(f'Mean err(k_sbd vs k_grid)  = {mean_err_grid:+.4f} '
+              f'({mean_err_grid_pct:+.2f}%)')
+
     return output_path
 
 

@@ -182,7 +182,7 @@ def plot_irf_difference_map(result, ERF_CO2, ax):
     gl.right_labels = False
 
     sm=cm.ScalarMappable(norm=norm, cmap=light_viridis)
-    cbar=plt.colorbar(sm, ax=ax, orientation="horizontal", shrink=0.5, pad=0.08)
+    cbar=plt.colorbar(sm, ax=ax, orientation="vertical", shrink=0.7)
     cbar.set_label(r'$\Delta$IRF$_{\mathrm{aci}}$ / ERF$_{\mathrm{CO2}}$')
 
 # ============================================================
@@ -261,11 +261,20 @@ def main():
         print("Plotting", ocean)
         plot_single_ocean(ocean, row["Original"], row["Corrected"])
 
-    # single-panel figure: the IRF difference map (panel b removed)
+    # composite figure: panel (a) map on top, panel (b) vertical dumbbell below
+    # 用 add_axes 精确定位：两张图 left 坐标相同(左对齐)，宽度可以不同
     fig = plt.figure(figsize=(14, 7))
     ax_a = fig.add_axes([0.06, 0.30, 0.81, 0.62], projection=ccrs.PlateCarree())
+    ax_b = fig.add_axes([0.06, 0.12, 0.60, 0.18])
 
     plot_irf_difference_map(result, erf_co2, ax_a)
+    plot_dumbbell_vertical(ax_b)
+
+    # panel identifiers a / b via format_panel_tag
+    ax_a.text(-0.02, 1.08, format_panel_tag(0, "science"),
+              transform=ax_a.transAxes, fontsize=16, va="top")
+    ax_b.text(-0.02, 1.23, format_panel_tag(1, "science"),
+              transform=ax_b.transAxes, fontsize=16, va="top")
 
     # --- global area-weighted means (printed in terminal, not annotated) ---
     areas = result.set_index("Ocean")["Area"]
@@ -292,7 +301,7 @@ def main():
     print(f"Global area-weighted mean of delta_IRFaci/ERF_CO2               : {ratio_awm:.4f}")
 
     FIG_DIR.mkdir(exist_ok=True)
-    fig.savefig(FIG_DIR / "fig4_underlying.png", dpi=300, bbox_inches="tight")
+    fig.savefig(FIG_DIR / "fig4_composite_ab.png", dpi=300, bbox_inches="tight")
     plt.close()
 
     print("\nMap values:")
