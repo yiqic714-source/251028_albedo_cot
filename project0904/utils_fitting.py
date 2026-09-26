@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 from scipy import odr, stats
 from scipy.optimize import least_squares
-from scipy.interpolate import griddata
+from scipy.interpolate import RegularGridInterpolator
+import xarray as xr
 
 np.random.seed(0)
 
@@ -246,7 +247,41 @@ def mc_fit(cot, albedo, cot_std=0.0, albedo_std=0.0, n_mc=300, bootstrap=True, r
 # SBDART lookup table interpolation
 # ============================================================
 
-def cot_to_albedo(cot, method, miu=None, sza=None, table_folder='dcp', ocean=None, season=None):
+# 3D SBDART LUT (sza x nre(=cloud effective radius) x cot) produced by
+# project0904/SBDART_LUT/run_sbdart.py.
+SBDART_LUT_DIR = '/home/chenyiqi/251028_albedo_cot/project0904/SBDART_LUT'
+_SBDART_3D_LUT_CACHE = {}
+
+
+def _sbdart_3d_interpolator(table_folder, ocean, season):
+    """Cached (sza, nre, cot) interpolator for one 3D SBDART LUT netCDF file."""
+    if table_folder.endswith('vis'):
+        # vis folders only contain the representative TPO/MAM LUT
+        ocean, season = 'TPO', 'MAM'
+    base = f'{SBDART_LUT_DIR}/{table_folder}'
+    path = f'{base}/albedo_cot_cer_sza_LUT_{ocean}_{season}.nc'
+    if not os.path.exists(path):
+        # dcp-style folders store one representative (TPO/MAM) LUT for everything
+        fallback = f'{base}/albedo_cot_cer_sza_LUT_TPO_MAM.nc'
+        if os.path.exists(fallback):
+            path = fallback
+        else:
+            return None
+    if path not in _SBDART_3D_LUT_CACHE:
+        with xr.open_dataset(path) as ds:
+            grid = ds['albedo'].values.astype(float)
+            axes = (
+                ds['sza'].values.astype(float),
+                ds['nre'].values.astype(float),
+                ds['cot'].values.astype(float),
+            )
+        _SBDART_3D_LUT_CACHE[path] = RegularGridInterpolator(
+            axes, grid, method='linear', bounds_error=False, fill_value=np.nan
+        )
+    return _SBDART_3D_LUT_CACHE[path]
+
+
+def cot_to_albedo(cot, method, miu=None, sza=None, cer=None, table_folder='dcp', ocean=None, season=None):
     """
     Compute cloud albedo from COT using various methods.
 
@@ -270,53 +305,26 @@ def cot_to_albedo(cot, method, miu=None, sza=None, table_folder='dcp', ocean=Non
     array-like
         Cloud albedo values.
     """
-    base_path = '/home/chenyiqi/251028_albedo_cot'
     cot = np.asarray(cot, dtype=float)
 
     if method == 'sbdart':
-        # print(table_folder)
-        if 'dcp' in table_folder:
-            file_name = 'cot_sza_to_albedo_lookup_table_TPO_MAM.csv'
-        else:
-            file_name = f'cot_sza_to_albedo_lookup_table_{ocean}_{season}.csv'
-
-        file_path = (
-            f'{base_path}/build_sbdart_lookup_table/'
-            f'cot_sza_to_albedo_lookup_table_{table_folder}/'
-            f'{file_name}'
-        )
-
-        if not os.path.exists(file_path):
-            return np.full(cot.shape, np.nan)
-
-        df = pd.read_csv(file_path, index_col=0)
-        sza_grid = np.array(df.index, dtype=float)
-        cot_grid = np.array(df.columns, dtype=float)
-        albedo_grid = df.values
-
-        sza_mesh, cot_mesh = np.meshgrid(sza_grid, cot_grid, indexing='ij')
-        points = np.column_stack([sza_mesh.ravel(), cot_mesh.ravel()])
-        values = albedo_grid.ravel()
-
-        valid = np.isfinite(values)
-
-        cot_arr = np.atleast_1d(cot)
+        # 3D lookup by (cot, sza, cer = cloud effective radius) from the
+        # netCDF LUT produced by project0904/SBDART_LUT/run_sbdart.py:
+        #   SBDART_LUT/<table_folder>/albedo_cot_cer_sza_LUT_{ocean}_{season}.nc
+        cot_arr = np.atleast_1d(np.asarray(cot, dtype=float))
+        interpolator = _sbdart_3d_interpolator(table_folder, ocean, season)
+        if interpolator is None:
+            return np.full(cot_arr.shape, np.nan)
         if np.ndim(sza) == 0:
-            sza_arr = np.full_like(cot_arr, sza, dtype=float)
+            sza_arr = np.full_like(cot_arr, float(sza))
         else:
-            sza_arr = np.asarray(sza, dtype=float)
-
-        target = np.column_stack([sza_arr, cot_arr])
-
-        albedo = griddata(
-            points[valid],
-            values[valid],
-            target,
-            method='linear',
-            fill_value=np.nan
-        )
-
-        return albedo.reshape(cot_arr.shape)
+            sza_arr = np.asarray(sza, dtype=float).ravel()
+        if np.ndim(cer) == 0:
+            cer_arr = np.full_like(cot_arr, float(cer))
+        else:
+            cer_arr = np.asarray(cer, dtype=float).ravel()
+        points = np.column_stack([sza_arr, cer_arr, cot_arr])
+        return interpolator(points).reshape(cot_arr.shape)
 
     if method == 'analy':
         g = 0.85

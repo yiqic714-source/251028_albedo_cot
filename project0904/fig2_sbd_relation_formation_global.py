@@ -19,6 +19,7 @@ COLORS = {
     'sza': "#3AE102",
     'shortwave': "#157B59",
     'gas': "#FF02F2",
+    'aod': "#BCBD22",
     'surface': '#574cff',
 }
 
@@ -49,7 +50,7 @@ def load_rfov():
         data = add_rfov_cot(pd.read_csv(path))
         data['ret_albedo'] = pd.to_numeric(data['ret_albedo'], errors='coerce')
         data['ocean'], data['season'] = ocean, season
-        frames.append(data[['cot_rfov', 'ret_albedo', 'solar_zenith', 'ocean', 'season']])
+        frames.append(data[['cot_rfov', 'ret_albedo', 'cer_ret_mean', 'solar_zenith', 'ocean', 'season']])
     data = pd.concat(frames, ignore_index=True).dropna().reset_index(drop=True)
     return data[(data['cot_rfov'] >= MIN_COT) & data['ret_albedo'].between(0, 1)].reset_index(drop=True).copy()
 
@@ -77,6 +78,7 @@ def calculate_sbdart(data, folder, sza_mode):
             sza = rows['solar_zenith'].to_numpy()
         result[indices] = cot_to_albedo(
             rows['cot_rfov'].to_numpy(), 'sbdart', sza=sza,
+            cer=rows['cer_ret_mean'].to_numpy(),
             table_folder=folder, ocean=ocean, season=season,
         )
     return result
@@ -100,21 +102,23 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, linestyle='-', linew
 
 def prepare_data(data):
     data = data.copy()
-    data['visible'] = calculate_sbdart(data, 'dcp_0p4to0p7', 0)
+    # SBD-Reproduce (fixed SZA), Real SZA: default (gasdcp/aoddcp/sfcdcp) vis LUT
+    data['visible'] = calculate_sbdart(data, 'gasdcp_aoddcp_sfcdcp_vis', 0)
     # extra reference: SBDART visible at the diffuse SZA theta = arccos(1/sqrt(3))
     data['visible_mu13'] = calculate_sbdart(
-        data, 'dcp_0p4to0p7', np.degrees(np.arccos(3 ** (-0.5)))
+        data, 'gasdcp_aoddcp_sfcdcp_vis', np.degrees(np.arccos(3 ** (-0.5)))
     )
-    data['sza'] = calculate_sbdart(data, 'dcp_0p4to0p7', 'per_point')
-    data['shortwave'] = calculate_sbdart(data, 'dcp', 'per_point')
-    data['gas'] = calculate_sbdart(data, 'surdcp_gascp', 'per_point')
-    data['surface'] = calculate_sbdart(data, 'cp', 'per_point')
+    data['sza'] = calculate_sbdart(data, 'gasdcp_aoddcp_sfcdcp_vis', 'per_point')
+    data['shortwave'] = calculate_sbdart(data, 'gasdcp_aoddcp_sfcdcp_sw', 'per_point')
+    data['gas'] = calculate_sbdart(data, 'gascp_aoddcp_sfcdcp_sw', 'per_point')
+    data['aod'] = calculate_sbdart(data, 'gascp_aodcp_sfcdcp_sw', 'per_point')
+    data['surface'] = calculate_sbdart(data, 'gascp_aodcp_sfccp_sw', 'per_point')
     return data
 
 
 def draw_global(ax, data, curves):
     """Plot the requested subset of curves (order: analy_mu13, analy,
-    visible_mu13, visible, sza, shortwave, surface, gas)."""
+    visible_mu13, visible, sza, shortwave, gas, aod, surface)."""
     edges = np.geomspace(MIN_COT, 76, 17)
     cot_fit = np.geomspace(MIN_COT, 76, 200)
 
@@ -132,11 +136,14 @@ def draw_global(ax, data, curves):
     if 'sza' in curves:
         fit_and_plot(ax, data, 'sza', r'Real SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
     if 'shortwave' in curves:
-        fit_and_plot(ax, data, 'shortwave', 'Shortwave Ranged', COLORS['shortwave'], edges)
+        fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
     if 'gas' in curves:
         fit_and_plot(ax, data, 'gas', 'Real Gas', COLORS['gas'], edges)
+    if 'aod' in curves:
+        fit_and_plot(ax, data, 'aod', 'Real AOD', COLORS['aod'], edges)
     if 'surface' in curves:
-        fit_and_plot(ax, data, 'surface', r'Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges)
+        fit_and_plot(ax, data, 'surface', r'Real $A_{\mathrm{sfc}}$', COLORS['surface'],
+                     edges, linestyle=':', linewidth=2.5)
 
     ax.set(
         xlim=(0, 60), ylim=(0.1, 0.95), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$'
@@ -158,7 +165,7 @@ def main():
     )
     draw_global(
         ax_b, data,
-        ('sza', 'shortwave', 'surface', 'gas'),
+        ('sza', 'shortwave', 'gas', 'aod', 'surface'),
     )
 
     ax_a.text(-0.03, 1.02, format_panel_tag(0, 'science'),

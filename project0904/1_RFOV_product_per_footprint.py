@@ -63,6 +63,7 @@ def process_single_footprint(
     delta,
     albedo_all,
     cot_mod,
+    cer_mod,
 ):
     """Process one CERES footprint.
 
@@ -82,6 +83,7 @@ def process_single_footprint(
     beta = np.asarray(beta, dtype=float).ravel()
     delta = np.asarray(delta, dtype=float).ravel()
     cot_mod = np.asarray(cot_mod, dtype=float).ravel()
+    cer_mod = np.asarray(cer_mod, dtype=float).ravel()
 
     n_pix = in_94power.size
     for name, arr in {
@@ -89,6 +91,7 @@ def process_single_footprint(
         "beta": beta,
         "delta": delta,
         "cot_mod": cot_mod,
+        "cer_mod": cer_mod,
     }.items():
         if arr.size != n_pix:
             raise ValueError(
@@ -136,9 +139,14 @@ def process_single_footprint(
             counts, _ = np.histogram(valid_cot, bins=COT_EDGES)
             cot_frequency += FOV_WEIGHTS[ii, jj] * counts
 
+    # Mean Cloud_Effective_Radius over the retrievable pixels of the field.
+    field_mask = ret_flag & in_94power & np.isfinite(cer_mod)
+    cer_ret_mean = float(np.mean(cer_mod[field_mask])) if np.any(field_mask) else np.nan
+
     return (
         ret_albedo,
         ret_fraction,
+        cer_ret_mean,
         *cot_frequency.tolist(),
     )
 
@@ -150,6 +158,7 @@ def get_rfov_product(
     latlon_land,
     ret_flag,
     cot_mod,
+    cer_mod,
     solar_zenith_cer,
     sensor_zenith_cer,
     albedo_all,
@@ -231,6 +240,7 @@ def get_rfov_product(
         sub_latlon_mod = latlon_mod[mod_mask]
         sub_ret_flag = ret_flag[mod_mask]
         sub_cot_mod = cot_mod[mod_mask]
+        sub_cer_mod = cer_mod[mod_mask]
 
         for cer_idx in cer_indices:
             delta, beta = uft.calc_delta_beta(
@@ -250,6 +260,7 @@ def get_rfov_product(
                 delta=delta,
                 albedo_all=albedo_all[cer_idx],
                 cot_mod=sub_cot_mod,
+                cer_mod=sub_cer_mod,
             )
 
             if fov_ret is None:
@@ -333,6 +344,7 @@ if __name__ == "__main__":
         "lon",
         "ret_albedo",
         "ret_fov_fra",
+        "cer_ret_mean",
         *COT_FREQ_COLUMNS,
         "solar_zenith",
         "sensor_zenith",
@@ -368,6 +380,7 @@ if __name__ == "__main__":
         sensor_zenith_mod = uft.read_and_mask_mod_variable(hdf, "Sensor_Zenith")
         solar_zenith_mod = uft.read_and_mask_mod_variable(hdf, "Solar_Zenith")
         cot_mod = uft.read_and_mask_mod_variable(hdf, "Cloud_Optical_Thickness")
+        cer_mod = uft.read_and_mask_mod_variable(hdf, "Cloud_Effective_Radius")
         ctt_mod = uft.read_and_mask_mod_variable(hdf, "cloud_top_temperature_1km")
 
         qa1km = hdf.select("Quality_Assurance_1km").get()
@@ -424,6 +437,7 @@ if __name__ == "__main__":
 
         # These arrays must use the same MODIS-pixel mask to remain aligned.
         cot_mod = cot_mod[valid_mod].ravel()
+        cer_mod = cer_mod[valid_mod].ravel()
         ret_flag = ret_flag[valid_mod].ravel()
         lat_mod = lat_mod[valid_mod].ravel()
         lon_mod = lon_mod[valid_mod].ravel()
@@ -487,6 +501,7 @@ if __name__ == "__main__":
             latlon_land,
             ret_flag,
             cot_mod,
+            cer_mod,
             solar_zenith_cer,
             sensor_zenith_cer,
             albedo_all,

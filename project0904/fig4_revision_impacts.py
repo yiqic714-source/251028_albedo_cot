@@ -185,67 +185,6 @@ def plot_irf_difference_map(result, ERF_CO2, ax):
     cbar=plt.colorbar(sm, ax=ax, orientation="horizontal", shrink=0.5, pad=0.08)
     cbar.set_label(r'$\Delta$IRF$_{\mathrm{aci}}$ / ERF$_{\mathrm{CO2}}$')
 
-# ============================================================
-# New: Vertical dumbbell plot
-# X: sample labels; Y: numeric values; vertical lines connect old / new
-# ============================================================
-def plot_dumbbell_vertical(ax):
-    labels = ["Q08", "B13", "Ma14", "Mc17", "G17", "R18", "H19", "T19", "D20", "J21"]
-    old_vals = np.array([-0.2, -0.6, -0.34, -1.0, -0.4, -0.8, -1.14, -0.52, -0.69, -0.59])
-    new_vals = old_vals.copy()
-    new_vals[[4,6,7,8]] = new_vals[[4,6,7,8]] * 0.664
-    new_vals[3] = new_vals[3] * 0.664 * 1.261
-
-    x_pos = np.arange(len(labels))
-
-    # ---- ±1σ (inter-study spread) shaded bands per group ------
-    mean_b = np.mean(old_vals)
-    sd_b = np.std(old_vals, ddof=1)
-    mean_a = np.mean(new_vals)
-    sd_a = np.std(new_vals, ddof=1)
-    # bands drawn first so points/lines stay on top
-    ax.axhspan(mean_b - sd_b, mean_b + sd_b,
-               color="#1f77b4", alpha=0.13, zorder=1)
-    ax.axhspan(mean_a - sd_a, mean_a + sd_a,
-               color="#d62728", alpha=0.13, zorder=1)
-
-    # mean lines (dashed) for before / after revision
-    line_b = ax.axhline(mean_b, color="#1f77b4", linestyle="--", lw=1.5,
-                        label=rf"Mean$_{{\mathrm{{before}}}}$ = {mean_b:.2f}",
-                        zorder=3)
-    line_a = ax.axhline(mean_a, color="#d62728", linestyle="--", lw=1.5,
-                        label=rf"Mean$_{{\mathrm{{after}}}}$ = {mean_a:.2f}",
-                        zorder=3)
-
-    # draw vertical connecting lines
-    for xi, yo, yn in zip(x_pos, old_vals, new_vals):
-        ax.plot([xi, xi], [yo, yn], color="#707070", lw=2.5, zorder=2)
-    # scatter points
-    h_before = ax.scatter(x_pos, old_vals, color='white', edgecolor="#1f77b4", linewidths=1.5, s=90, zorder=4, label="Before revision")
-    h_after = ax.scatter(x_pos, new_vals, color="#d62728", s=40, zorder=5, label="After revision")
-
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(labels)
-    ax.set_ylabel(r'IRF$_{\mathrm{aci}}$ (W m$^{-2}$)')
-    ax.legend(
-        handles=[
-            h_before,
-            h_after,
-            line_b,
-            line_a,
-            Patch(facecolor="#1f77b4", alpha=0.13, edgecolor="none",
-                  label=rf"$\pm1\sigma_{{\mathrm{{before}}}}$ = $\pm${sd_b:.2f}"),
-            Patch(facecolor="#d62728", alpha=0.13, edgecolor="none",
-                  label=rf"$\pm1\sigma_{{\mathrm{{after}}}}$ = $\pm${sd_a:.2f}"),
-        ],
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        borderaxespad=0.0,
-        fontsize=8.5,
-    )
-    ax.set_ylim(-1.3, 0)
-    # panel (b) keeps top & right frame lines (full box frame)
-    ax.grid(axis='y', alpha=0.3, linestyle=":")
 
 # ============================================================
 # Main

@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 L3_DIR = BASE_DIR / 'L3_product'
 RFOV_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
 SBDART_LUT_FOLDER = 'gascp_aodcp_sfccp_sw'
+L3_SBDART_LUT_FOLDER = 'gascp_aodcp_sfccp_sw'
 FIG_DIR = BASE_DIR / 'figs'
 OUTPUT_PATH = FIG_DIR / 'fig1_fittings_ocean.png'
 LINEAR_OUTPUT_PATH = FIG_DIR / 'figsupp_fittings_ocean_linear.png'
@@ -30,6 +31,7 @@ ANALY_COLOR = '#222222'
 SBD_COLOR = '#574cff'
 RFOV_COLOR = '#00bfff'
 GRID_COLOR = '#f20d38'
+L3_SBD_COLOR = '#1b9e77'
 M14_COLOR = '#ff852e'
 
 M14_PARAMS = {
@@ -138,6 +140,22 @@ def add_sbdart_albedo(data):
     return result.dropna(subset=['sbd_albedo'])
 
 
+def add_sbdart_albedo_l3(data):
+    """SBDART albedo from the L3 'cot', 'sza' and 'cer' columns (3D LUT)."""
+    result = data.copy()
+    result['sbd_l3_albedo'] = np.nan
+    for season, indices in result.groupby('season').groups.items():
+        rows = result.loc[indices]
+        result.loc[indices, 'sbd_l3_albedo'] = cot_to_albedo(
+            rows['cot'].to_numpy(), 'sbdart',
+            sza=rows['sza'].to_numpy(),
+            cer=rows['cer'].to_numpy(),
+            table_folder=L3_SBDART_LUT_FOLDER,
+            ocean=rows['ocean'].iloc[0], season=season,
+        )
+    return result.dropna(subset=['sbd_l3_albedo'])
+
+
 def logit_yerr(albedo, std):
     albedo = np.asarray(albedo, dtype=float)
     std = np.asarray(std, dtype=float)
@@ -215,6 +233,23 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
                     fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
         ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.5,
                 label=rf'Grid: $k$={k_grid:.2f}')
+
+    # SBDART albedo from the L3 'cot', 'sza', 'cer' columns.
+    l3_sbd = add_sbdart_albedo_l3(l3)
+    l3s_cot, l3s_albedo, l3s_std = bin_data(l3_sbd, 'cot', 'sbd_l3_albedo')
+    k_l3sbd, b_l3sbd = fit_line(l3s_cot, l3s_albedo, 0.10, 0.20)
+    l3sbd_fit = cot_k_b_to_albedo(COT_FIT, k_l3sbd, np.exp(b_l3sbd))
+    if linear:
+        ax.errorbar(cot_to_x(l3s_cot), albedo_to_y(l3s_albedo),
+                    yerr=logit_yerr(l3s_albedo, l3s_std), color=L3_SBD_COLOR,
+                    fmt='^', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(l3sbd_fit), color=L3_SBD_COLOR, lw=1.5,
+                label=rf'SBD(L3): $k$={k_l3sbd:.2f}')
+    else:
+        ax.errorbar(l3s_cot, l3s_albedo, yerr=l3s_std, color=L3_SBD_COLOR,
+                    fmt='^', lw=1, ms=2.4, capsize=2, capthick=0.6)
+        ax.plot(COT_FIT, l3sbd_fit, color=L3_SBD_COLOR, lw=1.5,
+                label=rf'SBD(L3): $k$={k_l3sbd:.2f}')
 
     # # M14 uses the same Grid rows, binning, error bars, and fit workflow.
     # if len(l3) >= 5:

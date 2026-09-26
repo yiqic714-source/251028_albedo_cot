@@ -1,3 +1,20 @@
+# -*- coding: utf-8 -*-
+"""
+figsupp_sbd_relation_formation_8oceans.py
+
+Eight panels (one per ocean).  Each panel is the same as panel (b) of
+fig2_sbd_relation_formation_global.py -- the five SBDART COT->albedo relations
+(Real SZA, Shortwave, Real Gas, Real AOD, Real A_sfc) -- but computed
+from a single ocean's RFOV footprints only.
+
+Folders (3D (cot, sza, cer) SBDART LUTs):
+    Real SZA   : gasdcp_aoddcp_sfcdcp_vis
+    Shortwave  : gasdcp_aoddcp_sfcdcp_sw
+    Real Gas   : gascp_aoddcp_sfcdcp_sw
+    Real AOD   : gascp_aodcp_sfcdcp_sw
+    Real A_sfc : gascp_aodcp_sfccp_sw
+"""
+
 import re
 from pathlib import Path
 
@@ -14,12 +31,14 @@ RFOV_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
 MIN_COT = 2.5
 MIN_GROUP_SIZE = 5
 
+# Same colours as fig2_sbd_relation_formation_global.py
 COLORS = {
     'visible': '#606581',
-    'shortwave': '#F354F3',
-    'surface': '#31B704',
-    'gas': '#16a085',
-    'sza': '#574cff',
+    'sza': "#3AE102",
+    'shortwave': "#157B59",
+    'gas': "#FF02F2",
+    'aod': "#BCBD22",
+    'surface': '#574cff',
 }
 
 
@@ -49,7 +68,8 @@ def load_rfov():
         data = add_rfov_cot(pd.read_csv(path))
         data['ret_albedo'] = pd.to_numeric(data['ret_albedo'], errors='coerce')
         data['ocean'], data['season'] = ocean, season
-        frames.append(data[['cot_rfov', 'ret_albedo', 'solar_zenith', 'ocean', 'season']])
+        frames.append(data[['cot_rfov', 'ret_albedo', 'cer_ret_mean',
+                            'solar_zenith', 'ocean', 'season']])
     data = pd.concat(frames, ignore_index=True).dropna().reset_index(drop=True)
     return data[(data['cot_rfov'] >= MIN_COT) & data['ret_albedo'].between(0, 1)].reset_index(drop=True).copy()
 
@@ -71,18 +91,19 @@ def calculate_sbdart(data, folder, sza_mode):
     result = np.full(len(data), np.nan)
     for (ocean, season), indices in data.groupby(['ocean', 'season']).groups.items():
         rows = data.loc[indices]
-        if sza_mode == 'fixed':
-            sza = 54.74
+        if isinstance(sza_mode, (int, float, np.number)):
+            sza = sza_mode
         else:
             sza = rows['solar_zenith'].to_numpy()
         result[indices] = cot_to_albedo(
             rows['cot_rfov'].to_numpy(), 'sbdart', sza=sza,
+            cer=rows['cer_ret_mean'].to_numpy(),
             table_folder=folder, ocean=ocean, season=season,
         )
     return result
 
 
-def fit_and_plot(ax, data, albedo_col, label, color, edges, marker=True, linestyle='-'):
+def fit_and_plot(ax, data, albedo_col, label, color, edges, linestyle='-', linewidth=1.8):
     cot_bins, albedo_bins, albedo_std = bin_relation(data, 'cot_rfov', albedo_col, edges)
     if len(cot_bins) < 3:
         return
@@ -93,43 +114,34 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, marker=True, linesty
     cot_fit = np.geomspace(MIN_COT, 76, 200)
     fit_albedo = 1 / (1 + np.exp(-(k * cot_to_x(cot_fit) + b)))
     ax.plot(
-        cot_fit, fit_albedo, color=color, lw=1.5, ls=linestyle,
-        label=rf'{label}: $k$={k:.2f}', alpha=.75,
+        cot_fit, fit_albedo, color=color, lw=linewidth, ls=linestyle,
+        label=rf'{label}: $k$={k:.2f}', alpha=.9,
     )
-    if marker:
-        ax.errorbar(
-            cot_bins, albedo_bins, yerr=albedo_std,
-            color=color, fmt='o', lw=0.5, ms=2.2, capsize=2, alpha=.75,
-        )
 
 
 def draw_ocean(ax, ocean, data):
+    """One panel == fig2 panel (b), from a single ocean's data."""
     edges = np.geomspace(MIN_COT, 76, 17)
     data = data.copy()
-    data['visible'] = calculate_sbdart(data, 'dcp_0p4to0p7', 'fixed')
-    data['shortwave'] = calculate_sbdart(data, 'dcp', 'fixed')
-    data['surface'] = calculate_sbdart(data, 'gasdcp_surcp', 'fixed')
-    data['gas'] = calculate_sbdart(data, 'cp', 'fixed')
-    data['sza'] = calculate_sbdart(data, 'cp', 'per_point')
+    data['sza'] = calculate_sbdart(data, 'gasdcp_aoddcp_sfcdcp_vis', 'per_point')
+    data['shortwave'] = calculate_sbdart(data, 'gasdcp_aoddcp_sfcdcp_sw', 'per_point')
+    data['gas'] = calculate_sbdart(data, 'gascp_aoddcp_sfcdcp_sw', 'per_point')
+    data['aod'] = calculate_sbdart(data, 'gascp_aodcp_sfcdcp_sw', 'per_point')
+    data['surface'] = calculate_sbdart(data, 'gascp_aodcp_sfccp_sw', 'per_point')
 
-    cot_fit = np.geomspace(MIN_COT, 76, 200)
-    lh74_albedo = cot_to_albedo(cot_fit, 'quadrature', sza=54.74)
-    ax.plot(cot_fit, lh74_albedo, color='#222222', lw=1.5,
-            label=r'LH74: $k$=1.00')
-
-    fit_and_plot(ax, data, 'visible', 'SBDART Reproduce', COLORS['visible'], edges)
-    fit_and_plot(ax, data, 'shortwave', '→ Shortwave', COLORS['shortwave'], edges)
-    fit_and_plot(ax, data, 'surface', r'+ real $A_{\mathrm{sfc}}$', COLORS['surface'], edges, linestyle='--')
-    fit_and_plot(ax, data, 'gas', '+ real Gas', COLORS['gas'], edges)
-    fit_and_plot(ax, data, 'sza', r'+ SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
+    fit_and_plot(ax, data, 'sza', r'Real SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
+    fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
+    fit_and_plot(ax, data, 'gas', 'Real Gas', COLORS['gas'], edges)
+    fit_and_plot(ax, data, 'aod', 'Real AOD', COLORS['aod'], edges)
+    fit_and_plot(ax, data, 'surface', r'Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges,
+                 linestyle=':', linewidth=2.5)
 
     ax.set(
-        xlim=(0, 60), ylim=(0, 1), xlabel='COT', ylabel=r'$A_{\mathrm{c}}$',
-        title=ocean,
+        xlim=(0, 60), ylim=(0.1, 0.95), title=ocean,
     )
     ax.grid(alpha=.25)
-    ax.tick_params(labelsize=7)
-    ax.legend(loc='lower right', fontsize=6.5, framealpha=.85)
+    ax.tick_params(labelsize=8.5)
+    ax.legend(loc='lower right', fontsize=8.5, framealpha=.85)
 
 
 def main():
@@ -176,3 +188,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -79,17 +79,17 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------
     # Configuration switches (each 'dcp' or 'cp'); BAND is 'vis' or 'sw'
     # ------------------------------------------------------------------
-    GAS = 'dcp'    # gas profile: 'dcp' (gasdcp) or 'cp' (gascp)
-    AOD = 'dcp'    # aerosol AOD:  'dcp' (aoddcp) or 'cp' (aodcp)
+    GAS = 'cp'    # gas profile: 'dcp' (gasdcp) or 'cp' (gascp)
+    AOD = 'cp'    # aerosol AOD:  'dcp' (aoddcp) or 'cp' (aodcp)
     SFC = 'dcp'    # surface albedo: 'dcp' (sfcdcp) or 'cp' (sfccp)
-    BAND = 'vis'   # spectral band: 'vis' or 'sw'
+    BAND = 'sw'   # spectral band: 'vis' or 'sw'
 
     # run grid: dcp -> single representative ocean/season; cp -> 8 oceans x 4 seasons
     if GAS == 'dcp':
         oceans = ['TPO']
         season_dict = {'MAM': [3, 4, 5]}
     elif GAS == 'cp':
-        oceans = ['NPO', 'NAO', 'TPO', 'TAO', 'TIO', 'SPO', 'SAO', 'SIO']
+        oceans = ['SPO', 'SAO', 'SIO']#'NPO', 'NAO', 'TPO', 'TAO', 'TIO', 
         season_dict = {
             'MAM': [3, 4, 5],
             'JJA': [6, 7, 8],

@@ -6,7 +6,7 @@ from util_ocean_season_division import split_by_ocean_season
 
 
 BASE_DIR = Path(__file__).resolve().parent
-INPUT_DIR = BASE_DIR / 'uniform_fov_product'
+INPUT_DIR = BASE_DIR / 'RFOV_product'
 OUTPUT_DIR = INPUT_DIR / 'ocean_season'
 
 
