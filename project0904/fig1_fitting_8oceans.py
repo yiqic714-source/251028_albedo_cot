@@ -20,7 +20,6 @@ SBDART_LUT_FOLDER = 'gascp_aodcp_sfccp_sw'
 FIG_DIR = BASE_DIR / 'figs'
 OUTPUT_PATH = FIG_DIR / 'fig1_fittings_ocean.png'
 LINEAR_OUTPUT_PATH = FIG_DIR / 'figsupp_fittings_ocean_linear.png'
-SENSITIVITY_CSV_PATH = BASE_DIR / 'processed_data' / 'sensitivity_albedo_vs_cot_ocean.csv'
 MIN_COT = 3
 MIN_CF = 0.1
 COT_EDGES = np.geomspace(MIN_COT, 76, 17)
@@ -147,9 +146,13 @@ def logit_yerr(albedo, std):
     return np.vstack([center - low, high - center])
 
 
-def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
-    l3 = l3_data[l3_data['ocean'] == ocean]
-    rfov = add_sbdart_albedo(rfov_data[rfov_data['ocean'] == ocean])
+def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False, use_all=False):
+    if use_all:
+        l3 = l3_data
+        rfov = add_sbdart_albedo(rfov_data)
+    else:
+        l3 = l3_data[l3_data['ocean'] == ocean]
+        rfov = add_sbdart_albedo(rfov_data[rfov_data['ocean'] == ocean])
 
     k_rfov = k_sbd = k_grid = np.nan
 
@@ -158,14 +161,14 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
     analy = cot_to_albedo(COT_FIT, 'analy', miu=1)
     if linear:
         ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy_miu13), color=ANALY_COLOR, lw=1.5,
-                label=r'Ana, $\mu=3^{-1/2}$: $k$=1')
+                label=r'Anal (54.74°): $k$=1')
         ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy), color=ANALY_COLOR, lw=1.5, ls='--',
-                label=r'Ana, $\mu$=1: $k$=1')
+                label=r'Anal (0°): $k$=1')
     else:
         ax.plot(COT_FIT, analy_miu13, color=ANALY_COLOR, lw=1.5,
-                label=r'Ana, $\mu=3^{-1/2}$: $k$=1')
+                label=r'Anal (54.74°): $k$=1')
         ax.plot(COT_FIT, analy, color=ANALY_COLOR, lw=1.5, ls='--',
-                label=r'Ana, $\mu$=1: $k$=1')
+                label=r'Anal (0°): $k$=1')
 
     sbd_cot, sbd_albedo, sbd_std = bin_data(
         rfov, 'cot_rfov', 'sbd_albedo'
@@ -261,6 +264,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
             f'({(k_sbd - k_grid) / k_grid * 100:+.2f}%)'
         )
     return {
+        'Ocean': ocean,
         'err_rfov': k_sbd - k_rfov,
         'err_rfov_pct': (k_sbd - k_rfov) / k_rfov * 100,
         'err_grid': k_sbd - k_grid,
@@ -269,7 +273,7 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False):
 
 
 def make_figure(l3_data, rfov_data, linear=False):
-    layout = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
+    layout = [['Global', 'NPO', 'NAO'], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
     fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
     panel_index = 0
     errors = []
@@ -279,7 +283,8 @@ def make_figure(l3_data, rfov_data, linear=False):
             if ocean is None:
                 ax.axis('off')
                 continue
-            errors.append(draw_ocean(ax, ocean, l3_data, rfov_data, linear=linear))
+            errors.append(draw_ocean(ax, ocean, l3_data, rfov_data,
+                                     linear=linear, use_all=(ocean == 'Global')))
             ax.text(-0.03, 1.01, format_panel_tag(panel_index, 'science'),
                     transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
             panel_index += 1
@@ -293,10 +298,11 @@ def make_figure(l3_data, rfov_data, linear=False):
     plt.close(fig)
 
     if not linear:
-        mean_err_rfov = np.nanmean([e['err_rfov'] for e in errors])
-        mean_err_grid = np.nanmean([e['err_grid'] for e in errors])
-        mean_err_rfov_pct = np.nanmean([e['err_rfov_pct'] for e in errors])
-        mean_err_grid_pct = np.nanmean([e['err_grid_pct'] for e in errors])
+        ocean_errors = [e for e in errors if e['Ocean'] != 'Global']
+        mean_err_rfov = np.nanmean([e['err_rfov'] for e in ocean_errors])
+        mean_err_grid = np.nanmean([e['err_grid'] for e in ocean_errors])
+        mean_err_rfov_pct = np.nanmean([e['err_rfov_pct'] for e in ocean_errors])
+        mean_err_grid_pct = np.nanmean([e['err_grid_pct'] for e in ocean_errors])
         print(f'\nMean err(k_sbd vs k_rfov) = {mean_err_rfov:+.4f} '
               f'({mean_err_rfov_pct:+.2f}%)')
         print(f'Mean err(k_sbd vs k_grid)  = {mean_err_grid:+.4f} '

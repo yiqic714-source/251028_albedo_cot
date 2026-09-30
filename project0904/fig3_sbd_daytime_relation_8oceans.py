@@ -153,9 +153,9 @@ def main():
     fig, ax = plt.subplots(figsize=(5, 4.1))
     analy_miu13 = cot_to_albedo(COT, 'analy', miu=3 ** (-0.5))
     ax.plot(COT, analy_miu13, color='k', lw=1.8,
-            label=r'Ana, $\mu=3^{-1/2}: k=1$')
+            label=r'Anal (54.74°): $k$=1')
     analy = cot_to_albedo(COT, 'analy', miu=1)
-    ax.plot(COT, analy, color='k', lw=1.8, ls='--', label=r'Ana, $\mu=1: k=1$')
+    ax.plot(COT, analy, color='k', lw=1.8, ls='--', label=r'Anal (0°): $k$=1')
 
     tropical_index = 0
     extratropical_index = 0

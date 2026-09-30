@@ -4,12 +4,12 @@ figsupp_3methods_global.py
 
 Global (all-ocean) comparison of three effective-COT representations used to
 fit the COT -> albedo relationship from RFOV data:
-    Method 1: full COT distribution
-    Method 2: arithmetic mean COT
-    Method 3: log-mean COT
+    Method 1: Reference
+    Method 2: arithmetic mean
+    Method 3: Geometric mean
 
 Footprints from every ocean/season are pooled and split into three equal-size
-groups by std(lgCOT) (small / medium / large); the three subplots show the
+groups by std(lnCOT) (lowest / middle / highest); the three subplots show the
 three methods fitted within each group.
 """
 
@@ -34,7 +34,7 @@ K_MIN, K_MAX = 0.05, 10.0
 
 COT_PLOT = np.linspace(0.01, 80, 500)
 
-# Style (three subplots: small / medium / large std(lgCOT))
+# Style (three subplots: lowest / middle / highest std(lnCOT))
 FIG_FIGSIZE = (10, 3.6)
 LABEL_SIZE = 11
 TICK_SIZE = 7
@@ -76,7 +76,7 @@ def cot_bins_from_columns(columns):
 
 
 def load_all_data():
-    """Load every ocean/season file and return (prob, obs_albedo, cot_mid, std_lgcot)."""
+    """Load every ocean/season file and return (prob, obs_albedo, cot_mid, std_lncot)."""
     frames = [pd.read_csv(path) for path in sorted(RFOV_DIR.glob('*.csv'))]
     if not frames:
         raise FileNotFoundError(f'No RFOV data in {RFOV_DIR}')
@@ -104,13 +104,13 @@ def load_all_data():
     obs_albedo = obs_albedo[valid]
     prob = freq / freq_sum[valid][:, None]
 
-    # per-footprint std of lg(COT) from its own COT distribution
-    lgcot = np.log(cot_mid)
-    mean_lg = prob @ lgcot
-    var_lg = prob @ (lgcot ** 2) - mean_lg ** 2
-    std_lgcot = np.sqrt(np.maximum(var_lg, 0.0))
+    # per-footprint std of lg(COT) from its own Reference
+    lncot = np.log(cot_mid)
+    mean_lg = prob @ lncot
+    var_lg = prob @ (lncot ** 2) - mean_lg ** 2
+    std_lncot = np.sqrt(np.maximum(var_lg, 0.0))
 
-    return prob, obs_albedo, cot_mid, std_lgcot
+    return prob, obs_albedo, cot_mid, std_lncot
 
 
 # ============================================================
@@ -166,7 +166,7 @@ def draw_methods(ax, title, fits):
         albedo = albedo_from_cot(COT_PLOT, b, k)
         ax.plot(
             COT_PLOT, albedo, linestyle, lw=1.6,
-            label=f'{label}\nb={b:.2g}, k={k:.2f}',
+            label=f'{label}\nb={b:.3f}, k={k:.3f}',
         )
 
     ax.set(xlim=XLIM, ylim=YLIM)
@@ -183,18 +183,18 @@ def draw_methods(ax, title, fits):
 def main():
     FIG_DIR.mkdir(exist_ok=True)
 
-    prob, obs_albedo, cot_mid, std_lgcot = load_all_data()
+    prob, obs_albedo, cot_mid, std_lncot = load_all_data()
     print(f'Total valid footprints: {len(obs_albedo)}')
 
-    # split every footprint into three equal-size groups by std(lgCOT)
-    q1, q2 = np.quantile(std_lgcot, [1.0 / 3.0, 2.0 / 3.0])
+    # split every footprint into three equal-size groups by std(lnCOT)
+    q1, q2 = np.quantile(std_lncot, [1.0 / 3.0, 2.0 / 3.0])
     groups = [
-        ('small std(lgCOT)', std_lgcot <= q1,
-         float(std_lgcot.min()), float(q1)),
-        ('medium std(lgCOT)', (std_lgcot > q1) & (std_lgcot <= q2),
+        ('Lowest std(lnCOT)', std_lncot <= q1,
+         float(std_lncot.min()), float(q1)),
+        ('Middle std(lnCOT)', (std_lncot > q1) & (std_lncot <= q2),
          float(q1), float(q2)),
-        ('large std(lgCOT)', std_lgcot > q2,
-         float(q2), float(std_lgcot.max())),
+        ('Highest std(lnCOT)', std_lncot > q2,
+         float(q2), float(std_lncot.max())),
     ]
 
     fig, axes = plt.subplots(1, 3, figsize=FIG_FIGSIZE, sharex=True, sharey=True)
@@ -205,25 +205,25 @@ def main():
         cot_mean = prob_g @ cot_mid
         log_cot_mean = np.exp(prob_g @ np.log(cot_mid))
 
-        # Method 1: full COT distribution
+        # Method 1: Reference
         b1, k1, rmse1 = optimize_model(
             lambda b, k: prob_g @ albedo_from_cot(cot_mid, b, k), obs_g)
         # Method 2: arithmetic mean COT
         b2, k2, rmse2 = optimize_model(
             lambda b, k: albedo_from_cot(cot_mean, b, k), obs_g)
-        # Method 3: log-mean COT
+        # Method 3: Geometric mean
         b3, k3, rmse3 = optimize_model(
             lambda b, k: albedo_from_cot(log_cot_mean, b, k), obs_g)
 
-        print(f'\n==== {name} (n={len(obs_g)}, std(lgCOT) in [{lo:.3f}, {hi:.3f}]) ====')
-        print(f'Method 1 COT Distribution : b={b1:.4g}  k={k1:.4f}  RMSE={rmse1:.4f}')
-        print(f'Method 2 Mean COT         : b={b2:.4g}  k={k2:.4f}  RMSE={rmse2:.4f}')
-        print(f'Method 3 Log-mean COT     : b={b3:.4g}  k={k3:.4f}  RMSE={rmse3:.4f}')
+        print(f'\n==== {name} (n={len(obs_g)}, std(lnCOT) in [{lo:.3f}, {hi:.3f}]) ====')
+        print(f'Method 1 Reference      : b={b1:.4g}  k={k1:.4f}  RMSE={rmse1:.4f}')
+        print(f'Method 2 Arithmetic Mean: b={b2:.4g}  k={k2:.4f}  RMSE={rmse2:.4f}')
+        print(f'Method 3 Geometric Mean : b={b3:.4g}  k={k3:.4f}  RMSE={rmse3:.4f}')
 
-        draw_methods(ax, f'{name}\nstd(lgCOT): {lo:.2f}-{hi:.2f}', [
-            ('COT Distribution', b1, k1),
-            ('Log mean COT', b3, k3),
-            ('Mean COT', b2, k2),
+        draw_methods(ax, f'{name}\nstd(lnCOT): {lo:.2f}-{hi:.2f}', [
+            ('Reference', b1, k1),
+            ('Geometric Mean', b3, k3),
+            ('Arithmetic Mean', b2, k2),
         ])
 
         ax.text(-0.03, 1.02, format_panel_tag(panel_index, 'science'),

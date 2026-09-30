@@ -141,7 +141,7 @@ def draw_ocean(ax, ocean, data):
     )
     ax.grid(alpha=.25)
     ax.tick_params(labelsize=8.5)
-    ax.legend(loc='lower right', fontsize=8.5, framealpha=.85)
+    ax.legend(loc='lower right', fontsize=8, framealpha=.85)
 
 
 def main():
@@ -167,7 +167,11 @@ def main():
                         ha='center', va='center', fontsize=8)
                 continue
             draw_ocean(ax, ocean, ocean_data)
-            panel_index = row * 3 + column
+            if row > 0:
+                panel_index = row * 3 + column - 1
+            else:
+                panel_index = row * 3 + column
+
             ax.text(
                 -0.03, 1.01, format_panel_tag(panel_index, 'science'),
                 transform=ax.transAxes, fontsize=12,
