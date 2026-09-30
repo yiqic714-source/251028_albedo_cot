@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import (
-    cot_to_albedo, cot_to_x, mc_fit, format_panel_tag,
+    cot_to_albedo, cot_to_x, fit_cot_albedo, format_panel_tag,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -62,7 +62,7 @@ def bin_relation(data, cot_col, albedo_col, edges):
         subset = data[labels == index]
         if len(subset) < MIN_GROUP_SIZE:
             continue
-        cot_bins.append(subset[cot_col].mean())
+        cot_bins.append(np.exp(np.log(subset[cot_col]).mean()))
         albedo_bins.append(subset[albedo_col].mean())
         albedo_std.append(subset[albedo_col].std())
     return np.asarray(cot_bins), np.asarray(albedo_bins), np.asarray(albedo_std)
@@ -88,15 +88,12 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, linestyle='-', linew
     cot_bins, albedo_bins, albedo_std = bin_relation(data, 'cot_rfov', albedo_col, edges)
     if len(cot_bins) < 3:
         return
-    k, b, _, _ = mc_fit(
-        cot_bins, albedo_bins,
-        cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True,
-    )
+    k, b, k_std, _ = fit_cot_albedo(cot_bins, albedo_bins)
     cot_fit = np.geomspace(MIN_COT, 76, 200)
     fit_albedo = 1 / (1 + np.exp(-(k * cot_to_x(cot_fit) + b)))
     ax.plot(
         cot_fit, fit_albedo, color=color, lw=linewidth, ls=linestyle,
-        label=rf'{label}: $k$={k:.2f}', alpha=.9,
+        label=rf'{label}: $k$={k:.2f}$\pm${k_std:.2f}', alpha=.9,
     )
 
 
@@ -124,19 +121,19 @@ def draw_global(ax, data, curves):
 
     if 'analy_mu13' in curves:
         ax.plot(cot_fit, cot_to_albedo(cot_fit, 'analy', miu=3 ** (-0.5)),
-                color='k', lw=1.8, label=r'Analytical (54.74°): $k$=1.00')
+                color='k', lw=1.8, label=r'Analytical (54.7°): $k$=1.00')
     if 'visible_mu13' in curves:
-        fit_and_plot(ax, data, 'visible_mu13', r'SBD-Reproduce (54.74°)', '0.5', edges)
+        fit_and_plot(ax, data, 'visible_mu13', r'VIS, cld-only (54.7°)', '0.5', edges)
     if 'analy' in curves:
         ax.plot(cot_fit, cot_to_albedo(cot_fit, 'analy', miu=1),
                 color='k', ls='--', lw=1.8, label=r'Analytical (0°): $k$=1.00')
     if 'visible' in curves:
-        fit_and_plot(ax, data, 'visible', r'SBD-Reproduce (0°)', COLORS['visible'],
+        fit_and_plot(ax, data, 'visible', r'VIS, cld-only (0°)', COLORS['visible'],
                      edges, linestyle='--')
     if 'sza' in curves:
-        fit_and_plot(ax, data, 'sza', r'Real SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
+        fit_and_plot(ax, data, 'sza', r'Real SZA', COLORS['sza'], edges)
     if 'shortwave' in curves:
-        fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
+        fit_and_plot(ax, data, 'shortwave', 'SW', COLORS['shortwave'], edges)
     if 'gas' in curves:
         fit_and_plot(ax, data, 'gas', 'Real Gas', COLORS['gas'], edges)
     if 'aod' in curves:

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from utils_fitting import mc_fit, cot_to_albedo
+from utils_fitting import cot_to_albedo, fit_cot_albedo
 
 # Paths
 BASE_PATH = '/home/chenyiqi/251028_albedo_cot'
@@ -112,7 +112,7 @@ def bin_relation(cot, albedo, edges):
         mask = labels == index
         if np.count_nonzero(mask) < MIN_GROUP_SIZE:
             continue
-        cot_bins.append(np.nanmean(cot[mask]))
+        cot_bins.append(np.exp(np.nanmean(np.log(cot[mask]))))
         albedo_bins.append(np.nanmean(albedo[mask]))
         albedo_std.append(np.nanstd(albedo[mask]))
     return (np.asarray(cot_bins), np.asarray(albedo_bins), np.asarray(albedo_std))
@@ -129,11 +129,9 @@ def draw_ac_cot_curves(ax, data):
         cot_bins, albedo_bins, albedo_std = bin_relation(cot, albedo, COT_EDGES)
         if len(cot_bins) < 3:
             continue
-        k_val, _, _, _ = mc_fit(
-            cot_bins, albedo_bins,
-            cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True,
-        )
-        legend_labels.append(rf'SZA={target_sza:.0f}°: $k$={k_val:.2f}')
+        k_val, _, k_std, _ = fit_cot_albedo(cot_bins, albedo_bins)
+        legend_labels.append(
+            rf'SZA={target_sza:.0f}°: $k$={k_val:.2f}$\pm${k_std:.2f}')
         ax.plot(cot_bins, albedo_bins, lw=2, color=color,
                 label=f'SZA={target_sza:.0f}°')
 
@@ -142,7 +140,7 @@ def draw_ac_cot_curves(ax, data):
 
     # ax.set_xlim(2.5, 60)
     ax.set_xlabel('COT', fontsize=13)
-    ax.set_ylabel(r'$A_{\mathrm{c,cp}}$', fontsize=13)
+    ax.set_ylabel(r'$A_{\mathrm{c}}$', fontsize=13)
     ax.legend(loc='best', fontsize=9, framealpha=0.9)
 
 

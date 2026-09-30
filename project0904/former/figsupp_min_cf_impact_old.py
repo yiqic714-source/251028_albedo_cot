@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils_fitting import fit_cot_albedo, format_panel_tag
+from utils_fitting import mc_fit, format_panel_tag
 
 BASE_DIR = Path(__file__).resolve().parent
 L3_DIR = BASE_DIR / 'L3_product'
@@ -27,10 +27,9 @@ COT_EDGES = np.geomspace(MIN_COT, 76, 17)
 MIN_GROUP_SIZE = 5
 
 # threshold grid: 0 to 0.6 with a 0.05 step
-THRESHOLDS = np.arange(0.0, 0.35 + 1e-9, 0.01)
+THRESHOLDS = np.arange(0.05, 0.15 + 1e-9, 0.01)
 
-OCEANS = ['NPO', 'NAO', 'TPO', 'TAO', 'TIO', 'SPO', 'SAO', 'SIO']
-LAYOUT = [['8-Ocean Mean', 'NPO', 'NAO'], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
+LAYOUT = [['NPO', 'NAO', None], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
 
 
 def load_l3_data():
@@ -68,14 +67,17 @@ def grid_k(data):
         subset = data[labels == index]
         if len(subset) < MIN_GROUP_SIZE:
             continue
-        cot_values.append(np.exp(np.log(subset['cot']).mean()))
+        cot_values.append(subset['cot'].mean())
         albedo_values.append(subset['albedo'].mean())
 
     if len(cot_values) < 3:
         return np.nan
 
-    k, _, _, _ = fit_cot_albedo(
-        np.asarray(cot_values), np.asarray(albedo_values))
+    k, _ = mc_fit(
+        np.asarray(cot_values), np.asarray(albedo_values),
+        cot_std=0.10, albedo_std=0.20, n_mc=300, bootstrap=True,
+        calculate_uncertainty=False,
+    )[:2]
     return k
 
 
@@ -101,13 +103,13 @@ def main():
     print(f'Total footprints (fixed conditions): {len(data)}')
 
     grids = {}
-    for ocean in OCEANS:
-        subset = data[data['ocean'] == ocean]
-        print(f'Computing {ocean} ({len(subset)} footprints)...')
-        grids[ocean] = compute_k_grid(subset)
-
-    print('Computing MEAN (mean of the 8 ocean grids)...')
-    grids['8-Ocean Mean'] = np.nanmean(np.stack([grids[o] for o in OCEANS]), axis=0)
+    for ocean_row in LAYOUT:
+        for ocean in ocean_row:
+            if ocean is None:
+                continue
+            subset = data[data['ocean'] == ocean]
+            print(f'Computing {ocean} ({len(subset)} footprints)...')
+            grids[ocean] = compute_k_grid(subset)
 
     vmin, vmax = 0.0, 1.0
 
@@ -130,21 +132,21 @@ def main():
             ax.set_title(ocean)
             ax.set_aspect('equal')
             # mark the point (0.1, 0.1)
-            ax.plot(0.1, 0.1, marker='o', ms=6, color='k',
+            ax.plot(0.1, 0.1, marker='o', ms=4, color='k',
                     markeredgecolor='white', markeredgewidth=0.6, zorder=5)
             ax.text(-0.03, 1.02, format_panel_tag(panel_index, 'science'),
                     transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
             panel_index += 1
             if row == 2:
-                ax.set_xlabel('CF Threshold')
+                ax.set_xlabel('Lower Bound of CF')
             if column == 0:
-                ax.set_ylabel('CRF Threshold')
+                ax.set_ylabel('Lower Bound of CRF')
 
     # colorbar on the right side of the whole figure
     fig.subplots_adjust(right=0.88)
     cax = fig.add_axes([0.90, 0.15, 0.02, 0.70])
     cbar = fig.colorbar(mesh, cax=cax)
-    cbar.set_label(r'Grided-Observation $k$')
+    cbar.set_label(r'Grid $k$')
 
     FIG_DIR.mkdir(exist_ok=True)
     out_path = FIG_DIR / 'figsupp_min_cf_impact.png'

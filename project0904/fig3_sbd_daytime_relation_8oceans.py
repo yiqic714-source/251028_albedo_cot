@@ -23,7 +23,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from utils_fitting import cot_k_b_to_albedo, cot_to_albedo, mc_fit, oceans
+from utils_fitting import (
+    cot_k_b_to_albedo, cot_to_albedo, fit_cot_albedo, oceans,
+)
 from utils_solar import calc_grid_cell_area, get_daytime_sza
 from util_ocean_season_division import oceans_def
 
@@ -136,26 +138,26 @@ def ocean_daytime_albedo(ocean, table_folder=SBDART_LUT_FOLDER, max_sza=MAX_SZA)
 
 
 def bin_relation(cot, albedo, edges):
-    """Binned mean cot / albedo / within-bin std (same as fig2)."""
+    """Binned geometric-mean COT, mean albedo, and albedo standard deviation."""
     labels = pd.cut(cot, edges, labels=False, include_lowest=True)
     cot_bins, albedo_bins, albedo_std = [], [], []
     for index in range(len(edges) - 1):
         mask = labels == index
         if np.count_nonzero(mask) < MIN_GROUP_SIZE:
             continue
-        cot_bins.append(np.nanmean(cot[mask]))
+        cot_bins.append(np.exp(np.nanmean(np.log(cot[mask]))))
         albedo_bins.append(np.nanmean(albedo[mask]))
         albedo_std.append(np.nanstd(albedo[mask]))
     return (np.asarray(cot_bins), np.asarray(albedo_bins), np.asarray(albedo_std))
 
 
 def main():
-    fig, ax = plt.subplots(figsize=(5, 4.1))
+    fig, ax = plt.subplots(figsize=(5, 4.4))
     analy_miu13 = cot_to_albedo(COT, 'analy', miu=3 ** (-0.5))
     ax.plot(COT, analy_miu13, color='k', lw=1.8,
-            label=r'Anal (54.74°): $k$=1')
+            label=r'Analytical (54.7°): $k$=1')
     analy = cot_to_albedo(COT, 'analy', miu=1)
-    ax.plot(COT, analy, color='k', lw=1.8, ls='--', label=r'Anal (0°): $k$=1')
+    ax.plot(COT, analy, color='k', lw=1.8, ls='--', label=r'Analytical (0°): $k$=1')
 
     tropical_index = 0
     extratropical_index = 0
@@ -166,7 +168,9 @@ def main():
         result = ocean_daytime_albedo(ocean)
 
         if result is None:
-            records.append({'Ocean': ocean, 'k': np.nan, 'lnb': np.nan})
+            records.append({
+                'Ocean': ocean, 'k': np.nan, 'k_std': np.nan, 'lnb': np.nan,
+            })
             ratio_by_ocean[ocean] = np.nan
             continue
 
@@ -192,20 +196,19 @@ def main():
         # fit like fig2: bin in cot_rfov, then fit the binned points
         cot_bins, albedo_bins, albedo_std = bin_relation(cot, albedo, COT_EDGES)
         if len(cot_bins) >= 3:
-            k, lnb, _, _ = mc_fit(
-                cot_bins, albedo_bins,
-                cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True,
-            )
+            k, lnb, k_std, _ = fit_cot_albedo(cot_bins, albedo_bins)
         else:
-            k, lnb = np.nan, np.nan
+            k, lnb, k_std = np.nan, np.nan, np.nan
 
-        records.append({'Ocean': ocean, 'k': k, 'lnb': lnb})
+        records.append({
+            'Ocean': ocean, 'k': k, 'k_std': k_std, 'lnb': lnb,
+        })
 
         fit_albedo = cot_k_b_to_albedo(COT, k, np.exp(lnb))
         ax.plot(
             COT, fit_albedo, color=color, lw=1.6,
             linestyle=LINESTYLES[index % len(LINESTYLES)],
-            label=rf'{ocean}: $k$={k:.2f}',
+            label=rf'{ocean}: $k$={k:.2f}$\pm${k_std:.2f}',
         )
 
     # --- Global ocean-area-weighted mean k ----------------------
@@ -214,13 +217,17 @@ def main():
     global_k = np.nansum(
         [record['k'] * area[record['Ocean']] for record in records]
     ) / total_area
+    global_k_std = np.sqrt(np.nansum([
+        (record['k_std'] * area[record['Ocean']] / total_area) ** 2
+        for record in records
+    ]))
 
-    print('\nGlobal ocean-area-weighted mean k: {:.4f}'.format(global_k))
+    print('\nGlobal ocean-area-weighted mean k: {:.4f} +/- {:.4f}'.format(
+        global_k, global_k_std))
     for record in records:
         print(
-            '  {:<4s} k={:.4f}  area={:.6e} km2  weight={:.3%}'.format(
-                record['Ocean'],
-                record['k'],
+            '  {:<4s} k={:.4f} +/- {:.4f}  area={:.6e} km2  weight={:.3%}'.format(
+                record['Ocean'], record['k'], record['k_std'],
                 area[record['Ocean']],
                 area[record['Ocean']] / total_area,
             )
@@ -259,4 +266,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

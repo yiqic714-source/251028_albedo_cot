@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import (
-    cot_to_albedo, cot_to_x, mc_fit, format_panel_tag,
+    cot_to_albedo, cot_to_x, fit_cot_albedo, format_panel_tag,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -81,7 +81,7 @@ def bin_relation(data, cot_col, albedo_col, edges):
         subset = data[labels == index]
         if len(subset) < MIN_GROUP_SIZE:
             continue
-        cot_bins.append(subset[cot_col].mean())
+        cot_bins.append(np.exp(np.log(subset[cot_col]).mean()))
         albedo_bins.append(subset[albedo_col].mean())
         albedo_std.append(subset[albedo_col].std())
     return np.asarray(cot_bins), np.asarray(albedo_bins), np.asarray(albedo_std)
@@ -107,15 +107,12 @@ def fit_and_plot(ax, data, albedo_col, label, color, edges, linestyle='-', linew
     cot_bins, albedo_bins, albedo_std = bin_relation(data, 'cot_rfov', albedo_col, edges)
     if len(cot_bins) < 3:
         return
-    k, b, _, _ = mc_fit(
-        cot_bins, albedo_bins,
-        cot_std=0.0, albedo_std=0.03, n_mc=300, bootstrap=True,
-    )
+    k, b, k_std, _ = fit_cot_albedo(cot_bins, albedo_bins)
     cot_fit = np.geomspace(MIN_COT, 76, 200)
     fit_albedo = 1 / (1 + np.exp(-(k * cot_to_x(cot_fit) + b)))
     ax.plot(
         cot_fit, fit_albedo, color=color, lw=linewidth, ls=linestyle,
-        label=rf'{label}: $k$={k:.2f}', alpha=.9,
+        label=rf'{label}: $k$={k:.2f}$\pm${k_std:.2f}', alpha=.9,
     )
 
 
@@ -129,8 +126,8 @@ def draw_ocean(ax, ocean, data):
     data['aod'] = calculate_sbdart(data, 'gascp_aodcp_sfcdcp_sw', 'per_point')
     data['surface'] = calculate_sbdart(data, 'gascp_aodcp_sfccp_sw', 'per_point')
 
-    fit_and_plot(ax, data, 'sza', r'Real SZA$_{\mathrm{1030}}$', COLORS['sza'], edges)
-    fit_and_plot(ax, data, 'shortwave', 'Shortwave', COLORS['shortwave'], edges)
+    fit_and_plot(ax, data, 'sza', r'Real SZA', COLORS['sza'], edges)
+    fit_and_plot(ax, data, 'shortwave', 'SW', COLORS['shortwave'], edges)
     fit_and_plot(ax, data, 'gas', 'Real Gas', COLORS['gas'], edges)
     fit_and_plot(ax, data, 'aod', 'Real AOD', COLORS['aod'], edges)
     fit_and_plot(ax, data, 'surface', r'Real $A_{\mathrm{sfc}}$', COLORS['surface'], edges,
@@ -141,7 +138,7 @@ def draw_ocean(ax, ocean, data):
     )
     ax.grid(alpha=.25)
     ax.tick_params(labelsize=8.5)
-    ax.legend(loc='lower right', fontsize=8, framealpha=.85)
+    ax.legend(loc='lower right', fontsize=7.5, framealpha=.7)
 
 
 def main():
@@ -192,4 +189,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 
 from utils_fitting import (
-    albedo_to_y, cot_k_b_to_albedo, cot_to_albedo, cot_to_x, mc_fit,
+    albedo_to_y, cot_k_b_to_albedo, cot_to_albedo, cot_to_x,
+    fit_cot_albedo,
     format_panel_tag,
 )
 
@@ -29,42 +30,26 @@ ANALY_COLOR = '#222222'
 SBD_COLOR = '#574cff'
 RFOV_COLOR = '#00bfff'
 GRID_COLOR = '#f20d38'
-M14_COLOR = '#ff852e'
-
-M14_PARAMS = {
-    'NPO': [0.00163, 0.0052, 0.337],
-    'NAO': [0.00101, 0.0052, 0.325],
-    'TPO': [0.00017, 0.0064, 0.405],
-    'TAO': [0.00027, 0.0071, 0.423],
-    'TIO': [0.00016, 0.0069, 0.425],
-    'SPO': [0.00013, 0.0062, 0.342],
-    'SAO': [0.00024, 0.0057, 0.333],
-    'SIO': [0.00028, 0.0053, 0.324],
-}
 
 
 def bin_data(data, cot_column, albedo_column):
     labels = pd.cut(data[cot_column], COT_EDGES, labels=False, include_lowest=True)
-    cot_values, albedo_values, albedo_stds = [], [], []
+    cot_values, albedo_values = [], []
     for index in range(len(COT_EDGES) - 1):
         subset = data[labels == index]
         if len(subset) < 5:
             continue
-        cot_values.append(subset[cot_column].mean())
+        # Represent each bin by its geometric-mean COT so that the fitted
+        # x-coordinate is the bin mean of ln(COT).
+        cot_values.append(np.exp(np.log(subset[cot_column]).mean()))
         albedo_values.append(subset[albedo_column].mean())
-        albedo_stds.append(subset[albedo_column].std())
-    return (np.asarray(cot_values), np.asarray(albedo_values),
-            np.asarray(albedo_stds))
+    return np.asarray(cot_values), np.asarray(albedo_values)
 
 
-def fit_line(cot, albedo, cot_std, albedo_std, calculate_uncertainty=True):
+def fit_line(cot, albedo):
     if len(cot) < 3:
-        return np.nan, np.nan
-    return mc_fit(
-        cot, albedo, cot_std=cot_std, albedo_std=albedo_std,
-        n_mc=300, bootstrap=True,
-        calculate_uncertainty=calculate_uncertainty,
-    )[:2]
+        return np.nan, np.nan, np.nan, np.nan
+    return fit_cot_albedo(cot, albedo)
 
 
 def load_l3_data():
@@ -137,15 +122,6 @@ def add_sbdart_albedo(data):
     return result.dropna(subset=['sbd_albedo'])
 
 
-def logit_yerr(albedo, std):
-    albedo = np.asarray(albedo, dtype=float)
-    std = np.asarray(std, dtype=float)
-    center = albedo_to_y(np.clip(albedo, 1e-6, 1 - 1e-6))
-    low = albedo_to_y(np.clip(albedo - std, 1e-6, 1 - 1e-6))
-    high = albedo_to_y(np.clip(albedo + std, 1e-6, 1 - 1e-6))
-    return np.vstack([center - low, high - center])
-
-
 def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False, use_all=False):
     if use_all:
         l3 = l3_data
@@ -161,91 +137,65 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False, use_all=False):
     analy = cot_to_albedo(COT_FIT, 'analy', miu=1)
     if linear:
         ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy_miu13), color=ANALY_COLOR, lw=1.5,
-                label=r'Anal (54.74°): $k$=1')
+                label=r'Analytical (54.7°): $k$=1')
         ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy), color=ANALY_COLOR, lw=1.5, ls='--',
-                label=r'Anal (0°): $k$=1')
+                label=r'Analytical (0°): $k$=1')
     else:
         ax.plot(COT_FIT, analy_miu13, color=ANALY_COLOR, lw=1.5,
-                label=r'Anal (54.74°): $k$=1')
+                label=r'Analytical (54.7°): $k$=1')
         ax.plot(COT_FIT, analy, color=ANALY_COLOR, lw=1.5, ls='--',
-                label=r'Anal (0°): $k$=1')
+                label=r'Analytical (0°): $k$=1')
 
-    sbd_cot, sbd_albedo, sbd_std = bin_data(
+    sbd_cot, sbd_albedo = bin_data(
         rfov, 'cot_rfov', 'sbd_albedo'
     )
-    k_sbd, b_sbd = fit_line(sbd_cot, sbd_albedo, 0.0, 0.03)
+    k_sbd, b_sbd, k_sbd_std, _ = fit_line(sbd_cot, sbd_albedo)
     sbd_fit = cot_k_b_to_albedo(COT_FIT, k_sbd, np.exp(b_sbd))
     if linear:
-        ax.errorbar(cot_to_x(sbd_cot), albedo_to_y(sbd_albedo),
-                    yerr=logit_yerr(sbd_albedo, sbd_std), color=SBD_COLOR,
-                    fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(cot_to_x(COT_FIT), albedo_to_y(sbd_fit), color=SBD_COLOR, lw=1.5,
-                label=rf'SBD: $k$={k_sbd:.2f}')
+        ax.plot(cot_to_x(sbd_cot), albedo_to_y(sbd_albedo),
+                color=SBD_COLOR, marker='s', ls='none', ms=3.3)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(sbd_fit), color=SBD_COLOR, lw=1.3,
+                label=rf'SBD: $k$={k_sbd:.2f}$\pm${k_sbd_std:.2f}')
     else:
-        ax.errorbar(sbd_cot, sbd_albedo, yerr=sbd_std, color=SBD_COLOR,
-                    fmt='o', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(COT_FIT, sbd_fit, color=SBD_COLOR, lw=1.5,
-                label=rf'SBD: $k$={k_sbd:.2f}')
+        ax.plot(sbd_cot, sbd_albedo, color=SBD_COLOR,
+                marker='s', ls='none', ms=3.3)
+        ax.plot(COT_FIT, sbd_fit, color=SBD_COLOR, lw=1.3,
+                label=rf'SBD: $k$={k_sbd:.2f}$\pm${k_sbd_std:.2f}')
 
-    rfov_cot, rfov_albedo, rfov_std = bin_data(
+    rfov_cot, rfov_albedo = bin_data(
         rfov, 'cot_rfov', 'ret_albedo'
     )
-    k_rfov, b_rfov = fit_line(rfov_cot, rfov_albedo, 0.10, 0.20)
+    k_rfov, b_rfov, k_rfov_std, _ = fit_line(
+        rfov_cot, rfov_albedo)
     rfov_fit = cot_k_b_to_albedo(COT_FIT, k_rfov, np.exp(b_rfov))
     if linear:
-        ax.errorbar(cot_to_x(rfov_cot), albedo_to_y(rfov_albedo),
-                    yerr=logit_yerr(rfov_albedo, rfov_std), color=RFOV_COLOR,
-                    fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(cot_to_x(COT_FIT), albedo_to_y(rfov_fit), color=RFOV_COLOR, lw=1.5,
-                label=rf'RFOV: $k$={k_rfov:.2f}')
+        ax.plot(cot_to_x(rfov_cot), albedo_to_y(rfov_albedo),
+                color=RFOV_COLOR, alpha=0.8, marker='o', ls='none', ms=2.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(rfov_fit), color=RFOV_COLOR, alpha=0.8,
+                lw=1.3, #ls=':',
+                label=rf'RFOV: $k$={k_rfov:.2f}$\pm${k_rfov_std:.2f}')
     else:
-        ax.errorbar(rfov_cot, rfov_albedo, yerr=rfov_std, color=RFOV_COLOR,
-                    fmt='*', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(COT_FIT, rfov_fit, color=RFOV_COLOR, lw=1.5,
-                label=rf'RFOV: $k$={k_rfov:.2f}')
+        ax.plot(rfov_cot, rfov_albedo, color=RFOV_COLOR, alpha=0.8,
+                marker='o', ls='none', ms=2.6)
+        ax.plot(COT_FIT, rfov_fit, color=RFOV_COLOR, lw=1.3, alpha=0.8, #ls=':',
+                label=rf'RFOV: $k$={k_rfov:.2f}$\pm${k_rfov_std:.2f}')
 
-    grid_cot, grid_albedo, grid_std = bin_data(l3, 'cot', 'albedo')
-    k_grid, b_grid = fit_line(grid_cot, grid_albedo, 0.10, 0.20)
+    grid_cot, grid_albedo = bin_data(
+        l3, 'cot', 'albedo')
+    k_grid, b_grid, k_grid_std, _ = fit_line(
+        grid_cot, grid_albedo)
     grid_fit = cot_k_b_to_albedo(COT_FIT, k_grid, np.exp(b_grid))
     if linear:
-        ax.errorbar(cot_to_x(grid_cot), albedo_to_y(grid_albedo),
-                    yerr=logit_yerr(grid_albedo, grid_std), color=GRID_COLOR,
-                    fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(cot_to_x(COT_FIT), albedo_to_y(grid_fit), color=GRID_COLOR, lw=1.5,
-                label=rf'Grid: $k$={k_grid:.2f}')
+        ax.plot(cot_to_x(grid_cot), albedo_to_y(grid_albedo),
+                color=GRID_COLOR, alpha=0.7, marker='*', ls='none', ms=3.2)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(grid_fit), color=GRID_COLOR,
+                lw=1.3, alpha=0.7,
+                label=rf'Grid: $k$={k_grid:.2f}$\pm${k_grid_std:.2f}')
     else:
-        ax.errorbar(grid_cot, grid_albedo, yerr=grid_std, color=GRID_COLOR,
-                    fmt='s', lw=1, ms=2.4, capsize=2, capthick=0.6)
-        ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.5,
-                label=rf'Grid: $k$={k_grid:.2f}')
-
-    # # M14 uses the same Grid rows, binning, error bars, and fit workflow.
-    # if len(l3) >= 5:
-    #     a3, a4, a6 = M14_PARAMS[ocean]
-    #     m14_data = l3.copy()
-    #     m14_data['m14_albedo'] = (
-    #         a3 + a4 * m14_data['cf_ceres'].to_numpy() *
-    #         m14_data['cot'].to_numpy()
-    #     ) ** a6
-    #     m14_cot, m14_albedo, m14_std = bin_data(
-    #         m14_data, 'cot', 'm14_albedo'
-    #     )
-    #     k_m14, b_m14, k_m14_unc, lnb_m14_unc = mc_fit(
-    #         m14_cot, m14_albedo,
-    #         cot_std=0.10, albedo_std=0.20,
-    #         n_mc=300, bootstrap=True,
-    #     )
-    #     plotted['M14'] = (M14_COLOR, rf'M14: $k$={k_m14:.2f}')
-    #     m14_fit = cot_k_b_to_albedo(COT_FIT, k_m14, np.exp(b_m14))
-    #     if linear:
-    #         ax.errorbar(cot_to_x(m14_cot), albedo_to_y(m14_albedo),
-    #                     yerr=logit_yerr(m14_albedo, m14_std), color=M14_COLOR,
-    #                     fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
-    #         ax.plot(cot_to_x(COT_FIT), albedo_to_y(m14_fit), color=M14_COLOR, lw=1.5)
-    #     else:
-    #         ax.errorbar(m14_cot, m14_albedo, yerr=m14_std, color=M14_COLOR,
-    #                     fmt='D', lw=1, ms=2.4, capsize=2, capthick=0.6)
-    #         ax.plot(COT_FIT, m14_fit, color=M14_COLOR, lw=1.5)
+        ax.plot(grid_cot, grid_albedo, color=GRID_COLOR, alpha=0.7,
+                marker='*', ls='none', ms=3.2)
+        ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.3, alpha=0.7,
+                label=rf'Grid: $k$={k_grid:.2f}$\pm${k_grid_std:.2f}')
 
     if linear:
         ax.set(title=ocean)
@@ -257,7 +207,9 @@ def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False, use_all=False):
 
     if not linear:
         print(
-            f'{ocean}: k_sbd={k_sbd:.4f}  k_rfov={k_rfov:.4f}  k_grid={k_grid:.4f}  '
+            f'{ocean}: k_sbd={k_sbd:.4f}+/-{k_sbd_std:.4f}  '
+            f'k_rfov={k_rfov:.4f}+/-{k_rfov_std:.4f}  '
+            f'k_grid={k_grid:.4f}+/-{k_grid_std:.4f}  '
             f'err(k_sbd vs k_rfov)={k_sbd - k_rfov:+.4f} '
             f'({(k_sbd - k_rfov) / k_rfov * 100:+.2f}%)  '
             f'err(k_sbd vs k_grid)={k_sbd - k_grid:+.4f} '
