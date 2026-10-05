@@ -1,0 +1,277 @@
+# -*- coding: utf-8 -*-
+"""Ocean-level COT-albedo relationships with M14 function points."""
+
+import re
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from utils_fitting import (
+    albedo_to_y, cot_k_b_to_albedo, cot_to_albedo, cot_to_x,
+    fit_cot_albedo,
+    format_panel_tag,
+)
+
+BASE_DIR = Path(__file__).resolve().parent
+L3_DIR = BASE_DIR / 'L3_product'
+RFOV_DIR = BASE_DIR / 'RFOV_product' / 'ocean_season'
+SBDART_LUT_FOLDER = 'gascp_aodcp_sfccp_sw'
+FIG_DIR = BASE_DIR / 'figs'
+OUTPUT_PATH = FIG_DIR / 'fig1_fittings_ocean.png'
+LINEAR_OUTPUT_PATH = FIG_DIR / 'figsupp_fittings_ocean_linear.png'
+MIN_COT = 3
+MIN_CF = 0.1
+COT_EDGES = np.geomspace(MIN_COT, 76, 17)
+COT_FIT = np.geomspace(MIN_COT, 60, 300)
+
+ANALY_COLOR = '#222222'
+SBD_COLOR = '#574cff'
+RFOV_COLOR = '#00bfff'
+GRID_COLOR = '#f20d38'
+
+
+def bin_data(data, cot_column, albedo_column):
+    labels = pd.cut(data[cot_column], COT_EDGES, labels=False, include_lowest=True)
+    cot_values, albedo_values = [], []
+    for index in range(len(COT_EDGES) - 1):
+        subset = data[labels == index]
+        if len(subset) < 5:
+            continue
+        # Represent each bin by its geometric-mean COT so that the fitted
+        # x-coordinate is the bin mean of ln(COT).
+        cot_values.append(np.exp(np.log(subset[cot_column]).mean()))
+        albedo_values.append(subset[albedo_column].mean())
+    return np.asarray(cot_values), np.asarray(albedo_values)
+
+
+def fit_line(cot, albedo):
+    if len(cot) < 3:
+        return np.nan, np.nan, np.nan, np.nan
+    return fit_cot_albedo(cot, albedo)
+
+
+def load_l3_data():
+    frames = []
+    for path in sorted(L3_DIR.glob('*.csv')):
+        parts = path.stem.rsplit('_', 1)
+        if len(parts) != 2:
+            continue
+        data = pd.read_csv(path)
+        data['ocean'] = parts[0]
+        data['season'] = parts[1]
+        frames.append(data)
+    data = pd.concat(frames, ignore_index=True)
+    data['albedo'] = ((data['sw_all'] - data['sw_clr'] * (1 - data['cf_ceres'])) /
+                      data['cf_ceres'] / data['solar_incoming'])
+    mask = (
+        (data['cf_ceres'] > MIN_CF) &
+        (data['cf_ret_tot'] > MIN_CF) &
+        (data['cf_liq_ceres'] / data['cf_ceres'] > 0.99) &
+        (data['cot'] > MIN_COT) &
+        data['albedo'].between(0, 1) &
+        (data['cttmin'] >= 270)
+    )
+    return data[mask].dropna(subset=['cot', 'albedo', 'sza']).copy()
+
+
+def add_rfov_cot(data):
+    bins = []
+    pattern = re.compile(r'^cot_freq_(\d+)_(\d+)$')
+    for column in data.columns:
+        match = pattern.match(column)
+        if match:
+            lower, upper = map(int, match.groups())
+            bins.append((lower, upper, column))
+    bins.sort()
+    columns = [column for _, _, column in bins]
+    midpoints = np.array([(lower + upper) / 2 for lower, upper, _ in bins])
+    weights = data[columns].apply(pd.to_numeric, errors='coerce').fillna(0).clip(lower=0).to_numpy(float)
+    total = weights.sum(axis=1)
+    mean_log_cot = np.divide(weights @ np.log(midpoints), total, out=np.full(len(data), np.nan), where=total > 0)
+    result = data.copy()
+    result['cot_rfov'] = np.exp(mean_log_cot)
+    return result
+
+
+def load_rfov_data():
+    frames = []
+    for path in sorted(RFOV_DIR.glob('*.csv')):
+        ocean, season = path.stem.rsplit('_', 1)
+        data = add_rfov_cot(pd.read_csv(path))
+        data['ret_albedo'] = pd.to_numeric(data['ret_albedo'], errors='coerce')
+        data['ocean'], data['season'] = ocean, season
+        frames.append(data[['cot_rfov', 'ret_albedo', 'cer_ret_mean', 'solar_zenith', 'ocean', 'season']])
+    data = pd.concat(frames, ignore_index=True).dropna().reset_index(drop=True)
+    return data[(data['cot_rfov'] >= MIN_COT) & data['ret_albedo'].between(0, 1)].copy()
+
+
+def add_sbdart_albedo(data):
+    result = data.copy()
+    result['sbd_albedo'] = np.nan
+    for (ocean, season), indices in result.groupby(['ocean', 'season']).groups.items():
+        rows = result.loc[indices]
+        result.loc[indices, 'sbd_albedo'] = cot_to_albedo(
+            rows['cot_rfov'].to_numpy(), 'sbdart',
+            sza=rows['solar_zenith'].to_numpy(),
+            cer=rows['cer_ret_mean'].to_numpy(),
+            table_folder=SBDART_LUT_FOLDER,
+            ocean=ocean, season=season,
+        )
+    return result.dropna(subset=['sbd_albedo'])
+
+
+def draw_ocean(ax, ocean, l3_data, rfov_data, linear=False, use_all=False):
+    if use_all:
+        l3 = l3_data
+        rfov = add_sbdart_albedo(rfov_data)
+    else:
+        l3 = l3_data[l3_data['ocean'] == ocean]
+        rfov = add_sbdart_albedo(rfov_data[rfov_data['ocean'] == ocean])
+
+    k_rfov = k_sbd = k_grid = np.nan
+
+    # ANALY theoretical relation.
+    analy_miu13 = cot_to_albedo(COT_FIT, 'analy', miu=3**(-0.5))
+    analy = cot_to_albedo(COT_FIT, 'analy', miu=1)
+    if linear:
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy_miu13), color=ANALY_COLOR, lw=1.5,
+                label=r'Analytical (54.7°): $k$=1')
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(analy), color=ANALY_COLOR, lw=1.5, ls='--',
+                label=r'Analytical (0°): $k$=1')
+    else:
+        ax.plot(COT_FIT, analy_miu13, color=ANALY_COLOR, lw=1.5,
+                label=r'Analytical (54.7°): $k$=1')
+        ax.plot(COT_FIT, analy, color=ANALY_COLOR, lw=1.5, ls='--',
+                label=r'Analytical (0°): $k$=1')
+
+    sbd_cot, sbd_albedo = bin_data(
+        rfov, 'cot_rfov', 'sbd_albedo'
+    )
+    k_sbd, b_sbd, k_sbd_std, _ = fit_line(sbd_cot, sbd_albedo)
+    sbd_fit = cot_k_b_to_albedo(COT_FIT, k_sbd, np.exp(b_sbd))
+    if linear:
+        ax.plot(cot_to_x(sbd_cot), albedo_to_y(sbd_albedo),
+                color=SBD_COLOR, marker='s', ls='none', ms=3.3)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(sbd_fit), color=SBD_COLOR, lw=1.3,
+                label=rf'SBD: $k$={k_sbd:.2f}$\pm${k_sbd_std:.2f}')
+    else:
+        ax.plot(sbd_cot, sbd_albedo, color=SBD_COLOR,
+                marker='s', ls='none', ms=3.3)
+        ax.plot(COT_FIT, sbd_fit, color=SBD_COLOR, lw=1.3,
+                label=rf'SBD: $k$={k_sbd:.2f}$\pm${k_sbd_std:.2f}')
+
+    rfov_cot, rfov_albedo = bin_data(
+        rfov, 'cot_rfov', 'ret_albedo'
+    )
+    k_rfov, b_rfov, k_rfov_std, _ = fit_line(
+        rfov_cot, rfov_albedo)
+    rfov_fit = cot_k_b_to_albedo(COT_FIT, k_rfov, np.exp(b_rfov))
+    if linear:
+        ax.plot(cot_to_x(rfov_cot), albedo_to_y(rfov_albedo),
+                color=RFOV_COLOR, alpha=0.8, marker='o', ls='none', ms=2.6)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(rfov_fit), color=RFOV_COLOR, alpha=0.8,
+                lw=1.3, #ls=':',
+                label=rf'RFOV: $k$={k_rfov:.2f}$\pm${k_rfov_std:.2f}')
+    else:
+        ax.plot(rfov_cot, rfov_albedo, color=RFOV_COLOR, alpha=0.8,
+                marker='o', ls='none', ms=2.6)
+        ax.plot(COT_FIT, rfov_fit, color=RFOV_COLOR, lw=1.3, alpha=0.8, #ls=':',
+                label=rf'RFOV: $k$={k_rfov:.2f}$\pm${k_rfov_std:.2f}')
+
+    grid_cot, grid_albedo = bin_data(
+        l3, 'cot', 'albedo')
+    k_grid, b_grid, k_grid_std, _ = fit_line(
+        grid_cot, grid_albedo)
+    grid_fit = cot_k_b_to_albedo(COT_FIT, k_grid, np.exp(b_grid))
+    if linear:
+        ax.plot(cot_to_x(grid_cot), albedo_to_y(grid_albedo),
+                color=GRID_COLOR, alpha=0.7, marker='*', ls='none', ms=3.2)
+        ax.plot(cot_to_x(COT_FIT), albedo_to_y(grid_fit), color=GRID_COLOR,
+                lw=1.3, alpha=0.7,
+                label=rf'Grid: $k$={k_grid:.2f}$\pm${k_grid_std:.2f}')
+    else:
+        ax.plot(grid_cot, grid_albedo, color=GRID_COLOR, alpha=0.7,
+                marker='*', ls='none', ms=3.2)
+        ax.plot(COT_FIT, grid_fit, color=GRID_COLOR, lw=1.3, alpha=0.7,
+                label=rf'Grid: $k$={k_grid:.2f}$\pm${k_grid_std:.2f}')
+
+    if linear:
+        ax.set(title=ocean)
+    else:
+        ax.set(xlim=(0, 60), ylim=(0.1, 0.95), title=ocean)
+    ax.grid(alpha=0.25)
+    ax.tick_params(labelsize=7)
+    ax.legend(loc='lower right', fontsize=6.5, framealpha=0.65)
+
+    if not linear:
+        print(
+            f'{ocean}: k_sbd={k_sbd:.4f}+/-{k_sbd_std:.4f}  '
+            f'k_rfov={k_rfov:.4f}+/-{k_rfov_std:.4f}  '
+            f'k_grid={k_grid:.4f}+/-{k_grid_std:.4f}  '
+            f'err(k_sbd vs k_rfov)={k_sbd - k_rfov:+.4f} '
+            f'({(k_sbd - k_rfov) / k_rfov * 100:+.2f}%)  '
+            f'err(k_sbd vs k_grid)={k_sbd - k_grid:+.4f} '
+            f'({(k_sbd - k_grid) / k_grid * 100:+.2f}%)'
+        )
+    return {
+        'Ocean': ocean,
+        'err_rfov': k_sbd - k_rfov,
+        'err_rfov_pct': (k_sbd - k_rfov) / k_rfov * 100,
+        'err_grid': k_sbd - k_grid,
+        'err_grid_pct': (k_sbd - k_grid) / k_grid * 100,
+    }
+
+
+def make_figure(l3_data, rfov_data, linear=False):
+    layout = [['Global', 'NPO', 'NAO'], ['TPO', 'TAO', 'TIO'], ['SPO', 'SAO', 'SIO']]
+    fig, axes = plt.subplots(3, 3, figsize=(9, 8), sharex=True, sharey=True)
+    panel_index = 0
+    errors = []
+    for row, ocean_row in enumerate(layout):
+        for column, ocean in enumerate(ocean_row):
+            ax = axes[row, column]
+            if ocean is None:
+                ax.axis('off')
+                continue
+            errors.append(draw_ocean(ax, ocean, l3_data, rfov_data,
+                                     linear=linear, use_all=(ocean == 'Global')))
+            ax.text(-0.03, 1.01, format_panel_tag(panel_index, 'science'),
+                    transform=ax.transAxes, fontsize=12, va='bottom', ha='left')
+            panel_index += 1
+            if row == 2:
+                ax.set_xlabel(r'$\ln(\mathrm{COT})$' if linear else 'COT', fontsize=11)
+            if column == 0:
+                ax.set_ylabel(r'$\ln[A_{\mathrm{c}}/(1-A_{\mathrm{c}})]$' if linear else r'$A_{\mathrm{c}}$', fontsize=11)
+    fig.tight_layout()
+    output_path = LINEAR_OUTPUT_PATH if linear else OUTPUT_PATH
+    fig.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+
+    if not linear:
+        ocean_errors = [e for e in errors if e['Ocean'] != 'Global']
+        mean_err_rfov = np.nanmean([e['err_rfov'] for e in ocean_errors])
+        mean_err_grid = np.nanmean([e['err_grid'] for e in ocean_errors])
+        mean_err_rfov_pct = np.nanmean([e['err_rfov_pct'] for e in ocean_errors])
+        mean_err_grid_pct = np.nanmean([e['err_grid_pct'] for e in ocean_errors])
+        print(f'\nMean err(k_sbd vs k_rfov) = {mean_err_rfov:+.4f} '
+              f'({mean_err_rfov_pct:+.2f}%)')
+        print(f'Mean err(k_sbd vs k_grid)  = {mean_err_grid:+.4f} '
+              f'({mean_err_grid_pct:+.2f}%)')
+
+    return output_path
+
+
+def main():
+    l3_data = load_l3_data()
+    rfov_data = load_rfov_data()
+    output_path = make_figure(l3_data, rfov_data)
+    FIG_DIR.mkdir(exist_ok=True)
+    linear_output_path = make_figure(l3_data, rfov_data, linear=True)
+    print(f'Saved: {output_path}')
+    print(f'Saved: {linear_output_path}')
+
+
+if __name__ == '__main__':
+    main()
